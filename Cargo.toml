@@ -1,0 +1,12 @@
+[package]
+name = "matchmaker-rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+uuid = { version = "1.11.0", features = ["v4", "serde"] }
+num = "0.4.3"
+serde = { version = "1.0", features = ["default", "derive"] }
+serde_json = { version = "1.0.133" }
+rocket = { version = "0.5.1", features = ["json"] }
+ws = { package = "rocket_ws", version = "0.1.1" }
