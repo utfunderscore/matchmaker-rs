@@ -4,7 +4,10 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 pub trait Matchmaker {
-    fn matchmake<'a>(&'a self, queue: &'a Vec<QueueEntry>) -> Result<Vec<Vec<Uuid>>, String>;
+    fn namespace(&self) -> &str;
+
+    fn matchmake(&self, queue: &[QueueEntry]) -> Result<Vec<Vec<Uuid>>, String>;
+    fn validate_entry(&self, queue_entry: &QueueEntry) -> Result<bool, String>;
 }
 
 pub struct UnratedMatchmaker {
@@ -21,16 +24,40 @@ impl UnratedMatchmaker {
             addends: addends::find_associate_addends(team_size),
         })
     }
+
+    pub fn find_valid_addend<'a>(
+        &self,
+        addends: &'a [HashMap<u64, u32>],
+        queue_by_size: &HashMap<u64, Vec<&QueueEntry>>,
+    ) -> Option<&'a HashMap<u64, u32>> {
+        if let Some(x) = addends.iter().next() {
+            for (ref_key, ref_needed_players) in x {
+                let in_queue_by_size =
+                    queue_by_size.get(ref_key).unwrap_or(&Vec::new()).len() as u32;
+
+                if &in_queue_by_size < ref_needed_players {
+                    return None;
+                }
+            }
+            return Some(x);
+        }
+
+        None
+    }
 }
 
 impl Matchmaker for UnratedMatchmaker {
-    fn matchmake<'a>(&'a self, in_queue: &'a Vec<QueueEntry>) -> Result<Vec<Vec<Uuid>>, String> {
+    fn namespace(&self) -> &str {
+        "unrated"
+    }
+
+    fn matchmake(&self, in_queue: &[QueueEntry]) -> Result<Vec<Vec<Uuid>>, String> {
         let mut queue_by_size: HashMap<u64, Vec<&QueueEntry>> = HashMap::new();
 
         for entry in in_queue {
             let current_entries = queue_by_size.get_mut(&(entry.players.len() as u64));
-            if current_entries.is_some() {
-                current_entries.unwrap().push(entry);
+            if let Some(item) = current_entries {
+                item.push(entry);
             } else {
                 queue_by_size.insert(entry.players.len() as u64, Vec::from([entry]));
             }
@@ -38,8 +65,8 @@ impl Matchmaker for UnratedMatchmaker {
 
         let mut teams: Vec<Vec<Uuid>> = Vec::new();
 
-        for x in 0..self.number_of_teams {
-            let addend = find_valid_addend(&self.addends, &queue_by_size);
+        for _x in 0..self.number_of_teams {
+            let addend = self.find_valid_addend(&self.addends, &queue_by_size);
             if addend.is_none() {
                 return Err(String::from(
                     "Unable to build the required amount of teams.",
@@ -62,7 +89,7 @@ impl Matchmaker for UnratedMatchmaker {
 
                 let mut entries: Vec<Uuid> = Vec::new();
 
-                for i in 0..*number_of_teams {
+                for _i in 0..*number_of_teams {
                     match teams_ref.pop() {
                         Some(x) => entries.push(x.id),
                         None => {
@@ -87,22 +114,17 @@ impl Matchmaker for UnratedMatchmaker {
 
         Ok(teams)
     }
-}
 
-fn find_valid_addend<'a>(
-    addends: &'a [HashMap<u64, u32>],
-    queue_by_size: &HashMap<u64, Vec<&QueueEntry>>,
-) -> Option<&'a HashMap<u64, u32>> {
-    if let Some(x) = addends.iter().next() {
-        for (ref_key, ref_needed_players) in x {
-            let in_queue_by_size = queue_by_size.get(ref_key).unwrap_or(&Vec::new()).len() as u32;
-
-            if &in_queue_by_size < ref_needed_players {
-                return None;
-            }
+    fn validate_entry(&self, queue_entry: &QueueEntry) -> Result<bool, String> {
+        if queue_entry.players.len() as u64 <= self.team_size {
+            Ok(true)
+        } else {
+            Err(format!(
+                "Team size cannot exceed {} players",
+                self.team_size
+            ))
         }
-        return Some(x);
     }
-
-    None
 }
+
+pub struct EloMatchmaker {}

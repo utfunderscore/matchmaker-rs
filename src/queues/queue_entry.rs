@@ -1,4 +1,5 @@
-use rocket::serde::Serialize;
+use serde::Serialize;
+use serde_json::Value;
 use std::hash::{Hash, Hasher};
 use uuid::Uuid;
 
@@ -6,14 +7,20 @@ use uuid::Uuid;
 pub(crate) struct QueueEntry {
     pub id: Uuid,
     pub players: Vec<Uuid>,
+    pub attributes: Value,
 }
 
 impl QueueEntry {
-    pub fn from_vec(players: Vec<Uuid>) -> QueueEntry {
+    pub fn new(players: Vec<Uuid>, attributes: Value) -> QueueEntry {
         QueueEntry {
             id: Uuid::new_v4(),
             players,
+            attributes,
         }
+    }
+
+    pub fn get_id(&self) -> &Uuid {
+        &self.id
     }
 }
 

@@ -2,11 +2,11 @@ use crate::game::game::Game;
 use crate::game::game_provider::GameProvider;
 use crate::matchmaker::matchmaker::Matchmaker;
 use crate::queues::queue::Queue;
-use rocket::tokio;
-use rocket::tokio::sync::oneshot::Sender;
+use crate::queues::queue_entry::QueueEntry;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tokio::sync::oneshot::{channel, Receiver, Sender};
 use uuid::Uuid;
 
 pub struct QueueTicker {
@@ -15,7 +15,6 @@ pub struct QueueTicker {
     game_producer: Box<dyn GameProvider + Send + Sync>,
     entry_channels: HashMap<Uuid, Sender<Result<Game, String>>>,
 }
-
 impl QueueTicker {
     pub fn new(
         queue: Queue,
@@ -48,17 +47,6 @@ impl QueueTicker {
         ticker_arc
     }
 
-    fn try_notify_socket(&mut self, entryId: &Uuid, game: Game) {
-        let sender = self.entry_channels.get(entryId);
-        if sender.is_none() {
-            return;
-        }
-        let sender = sender.unwrap();
-
-        let removed = self.entry_channels.remove(entryId).unwrap();
-        removed.send(Ok(game)).unwrap()
-    }
-
     fn tick(&mut self) {
         let matchmaker_result = self.matchmaker.matchmake(&self.queue.in_queue);
         if matchmaker_result.is_err() {
@@ -75,12 +63,41 @@ impl QueueTicker {
         let game = game_result.unwrap();
 
         for team in teams {
-            for entryId in team {
-                self.queue.remove_team(entryId).expect("");
-
-                self.try_notify_socket(&entryId, game.clone());
+            for entry_id in team {
+                if let Err(e) = self.queue.remove_team(&entry_id) {
+                    eprintln!("Failed to remove team from the queue: {}", e);
+                } else {
+                    self.try_notify_socket(&entry_id, game.clone());
+                }
             }
         }
+    }
+
+    pub fn store() {}
+
+    fn try_notify_socket(&mut self, entry_id: &Uuid, game: Game) {
+        let sender = self.entry_channels.get(entry_id);
+        if sender.is_none() {
+            return;
+        }
+
+        let removed = self.entry_channels.remove(entry_id).unwrap();
+        removed.send(Ok(game)).unwrap()
+    }
+
+    pub fn add_team(
+        &mut self,
+        queue_entry: QueueEntry,
+    ) -> Result<Receiver<Result<Game, String>>, String> {
+        self.matchmaker.validate_entry(&queue_entry)?;
+
+        let (sender, receiver) = channel::<Result<Game, String>>();
+
+        self.add_channel(queue_entry.id, sender);
+
+        self.get_queue_mut().add_team(queue_entry)?;
+
+        Ok(receiver)
     }
 
     pub fn add_channel(&mut self, entry_id: Uuid, sender: Sender<Result<Game, String>>) {
