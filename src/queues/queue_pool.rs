@@ -1,15 +1,19 @@
 use crate::game::game::Game;
+use crate::matchmaker::serializer::SerializerRegistry;
 use crate::queues::queue::Queue;
 use crate::queues::queue_entry::QueueEntry;
 use crate::queues::queue_ticker::QueueTicker;
+use log::error;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::{BufReader, BufWriter, Write};
 use std::sync::{Arc, Mutex, RwLock};
 use tokio::sync::oneshot::Receiver;
 use uuid::Uuid;
 
 pub struct QueuePool {
-    queue_tickers: RwLock<HashMap<String, Arc<Mutex<QueueTicker>>>>,
+    pub queue_tickers: RwLock<HashMap<String, Arc<Mutex<QueueTicker>>>>,
     queue_creators: HashMap<
         String,
         Box<dyn Fn(String, Value) -> Result<Arc<Mutex<QueueTicker>>, String> + Send + Sync>,

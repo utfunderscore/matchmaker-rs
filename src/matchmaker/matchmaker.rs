@@ -1,18 +1,26 @@
 use crate::matchmaker::addends::addends;
+use crate::queues::queue::Queue;
 use crate::queues::queue_entry::QueueEntry;
+use crate::queues::queue_ticker::QueueTicker;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::any::Any;
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 pub trait Matchmaker {
     fn namespace(&self) -> &str;
-
     fn matchmake(&self, queue: &[QueueEntry]) -> Result<Vec<Vec<Uuid>>, String>;
     fn validate_entry(&self, queue_entry: &QueueEntry) -> Result<bool, String>;
+    fn as_any(&self) -> &dyn Any;
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct UnratedMatchmaker {
     pub(crate) team_size: u64,
     pub(crate) number_of_teams: u64,
+    #[serde(skip_deserializing, skip_serializing)]
     pub(crate) addends: Vec<HashMap<u64, u32>>,
 }
 
@@ -43,6 +51,29 @@ impl UnratedMatchmaker {
         }
 
         None
+    }
+
+    pub fn create_unrated_queue(
+        name: String,
+        body: Value,
+    ) -> Result<Arc<Mutex<QueueTicker>>, String> {
+        let team_size = body
+            .get("team_size")
+            .ok_or("Missing json attribute 'team_size'")?
+            .as_u64()
+            .ok_or("'team_size' must be an integer")?;
+
+        let number_of_teams = body
+            .get("number_of_teams")
+            .ok_or("Missing json attribute 'number_of_teams'")?
+            .as_u64()
+            .ok_or("'number_of_teams' must be an integer")?;
+
+        Ok(QueueTicker::new(
+            Queue::new(name),
+            UnratedMatchmaker::new(team_size, number_of_teams),
+            Box::new(crate::FakeGameProvider {}),
+        ))
     }
 }
 
@@ -124,6 +155,10 @@ impl Matchmaker for UnratedMatchmaker {
                 self.team_size
             ))
         }
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 

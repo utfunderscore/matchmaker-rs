@@ -1,14 +1,13 @@
 use super::queue_entry::QueueEntry;
 use log;
 use serde::Serialize;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Queue {
     pub name: String,
     pub in_queue: Vec<QueueEntry>,
-    #[serde(skip_serializing)]
     pub players: HashSet<Uuid>,
 }
 

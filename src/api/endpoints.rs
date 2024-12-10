@@ -31,7 +31,7 @@ async fn create_queue(
     queue_pool: web::Data<Arc<Mutex<QueuePool>>>,
     queue_id: web::Path<String>,
     queue_type: web::Query<CreateQueueQuery>,
-    body: web::Json<Value>,
+    body: Json<Value>,
 ) -> std::io::Result<impl Responder> {
     let mut queue_pool = queue_pool
         .lock()

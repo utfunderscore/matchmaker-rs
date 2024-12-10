@@ -1,8 +1,10 @@
 use crate::game::game::Game;
-use crate::game::game_provider::GameProvider;
+use crate::game::game_provider::{FakeGameProvider, GameProvider};
 use crate::matchmaker::matchmaker::Matchmaker;
+use crate::matchmaker::serializer::SerializerRegistry;
 use crate::queues::queue::Queue;
 use crate::queues::queue_entry::QueueEntry;
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -73,8 +75,6 @@ impl QueueTicker {
         }
     }
 
-    pub fn store() {}
-
     fn try_notify_socket(&mut self, entry_id: &Uuid, game: Game) {
         let sender = self.entry_channels.get(entry_id);
         if sender.is_none() {
@@ -110,5 +110,66 @@ impl QueueTicker {
 
     pub fn get_queue_mut(&mut self) -> &mut Queue {
         &mut self.queue
+    }
+}
+
+// Serialization & Deserialization
+impl QueueTicker {
+    pub fn save(&self, matchmaker_registry: &SerializerRegistry) -> Result<Value, String> {
+        let mut json: HashMap<String, Value> = HashMap::new();
+
+        let namespace = self.matchmaker.namespace();
+
+        let serializer = matchmaker_registry
+            .get(String::from(namespace))
+            .ok_or("Could not find serializer")?;
+
+        json.insert(String::from("name"), Value::String(self.queue.name.clone()));
+        // TODO: Consider serializing players in queue and re-establishing active connections
+        // json.insert(String::from("players"), Value::Array())
+
+        json.insert(String::from("type"), Value::String(String::from(namespace)));
+
+        let matchmaker = &self.matchmaker;
+
+        let data = serializer.serialize(matchmaker)?;
+
+        json.insert(String::from("matchmaker"), data);
+
+        Ok(json!(json))
+    }
+
+    pub fn load(
+        value: &Value,
+        serializer_registry: &SerializerRegistry,
+    ) -> Result<Arc<Mutex<Self>>, String> {
+        let queue_name = value
+            .get("name")
+            .ok_or("Could not find queue name")?
+            .as_str()
+            .ok_or("Could not find queue name")?;
+        let namespace = value
+            .get("type")
+            .ok_or("Could not find queue name")?
+            .as_str()
+            .ok_or("Could not find queue name")?;
+
+        let data = value
+            .get("matchmaker")
+            .ok_or("Could not find matchmaker data")?;
+
+        let serializer = serializer_registry
+            .get(String::from(namespace))
+            .ok_or(format!("Failed to find serializer for {}", namespace))?;
+
+        let matchmaker = serializer.deserialize(data.clone())?;
+
+        let ticker = Self::new(
+            Queue::new(String::from(queue_name)),
+            matchmaker,
+            Box::new(FakeGameProvider {}),
+        );
+
+        Ok(ticker)
     }
 }

@@ -1,3 +1,3 @@
 pub mod addends;
 pub mod matchmaker;
-pub mod store;
+pub mod serializer;

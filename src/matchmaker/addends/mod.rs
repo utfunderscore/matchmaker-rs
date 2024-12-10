@@ -1,1 +1,1 @@
-pub mod addends;
+pub(crate) mod addends;
