@@ -14,23 +14,31 @@ pub trait QueueStore {
 }
 
 pub struct FlatFileQueueStore {
-    file: File,
+    path: String,
     serializer_registry: SerializerRegistry,
 }
 
 impl FlatFileQueueStore {
-    pub fn new(file: File, serializer_registry: SerializerRegistry) -> FlatFileQueueStore {
+    pub fn new(path: String, serializer_registry: SerializerRegistry) -> FlatFileQueueStore {
         FlatFileQueueStore {
-            file,
+            path,
             serializer_registry,
         }
+    }
+
+    fn get_read_file(&self) -> Result<File, String> {
+        File::open(self.path.clone()).map_err(|x| x.to_string())
+    }
+
+    fn get_write_file(&self) -> Result<File, String> {
+        File::create(self.path.clone()).map_err(|x| x.to_string())
     }
 }
 
 impl QueueStore for FlatFileQueueStore {
     fn load(&self) -> Result<QueuePool, String> {
         let mut queue_pool = QueuePool::new();
-        let reader = BufReader::new(&self.file);
+        let reader = BufReader::new(self.get_read_file()?);
 
         let json: Value = serde_json::from_reader(reader).map_err(|x| x.to_string())?;
         let json_array = json.as_array().ok_or("Not json array")?;
@@ -47,7 +55,7 @@ impl QueueStore for FlatFileQueueStore {
     fn save(&self, queue_pool: Data<Arc<Mutex<QueuePool>>>) -> Result<(), String> {
         let queue_pool = queue_pool.lock().map_err(|x| x.to_string())?;
 
-        let writer = BufWriter::new(&self.file);
+        let writer = BufWriter::new(self.get_write_file()?);
 
         let queues = queue_pool
             .queue_tickers
@@ -71,7 +79,7 @@ impl QueueStore for FlatFileQueueStore {
             serialized_queues.push(save_result?);
         }
 
-        println!("{:?}", serialized_queues);
+        println!("test : {:?}", serialized_queues);
 
         serde_json::to_writer(writer, &serialized_queues).map_err(|x| format!("{:?}", x))?;
 
