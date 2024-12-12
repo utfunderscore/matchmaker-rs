@@ -1,16 +1,16 @@
 use crate::matchmaker::serializer::SerializerRegistry;
 use crate::queues::queue_pool::QueuePool;
 use crate::queues::queue_ticker::QueueTicker;
-use actix_web::web::Data;
 use serde_json::Value;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 pub trait QueueStore {
     fn load(&self) -> Result<QueuePool, String>;
 
-    fn save(&self, queue_pool: Data<Arc<Mutex<QueuePool>>>) -> Result<(), String>;
+    async fn save(&self, queue_pool: Arc<Mutex<QueuePool>>) -> Result<(), String>;
 }
 
 pub struct FlatFileQueueStore {
@@ -52,8 +52,8 @@ impl QueueStore for FlatFileQueueStore {
         Ok(queue_pool)
     }
 
-    fn save(&self, queue_pool: Data<Arc<Mutex<QueuePool>>>) -> Result<(), String> {
-        let queue_pool = queue_pool.lock().map_err(|x| x.to_string())?;
+    async fn save(&self, queue_pool: Arc<Mutex<QueuePool>>) -> Result<(), String> {
+        let queue_pool = queue_pool.lock().await;
 
         let writer = BufWriter::new(self.get_write_file()?);
 
