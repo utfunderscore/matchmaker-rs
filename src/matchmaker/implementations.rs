@@ -1,7 +1,8 @@
-use crate::matchmaker::addends::addends;
+use crate::matchmaker::addends;
 use crate::queues::queue::Queue;
 use crate::queues::queue_entry::QueueEntry;
 use crate::queues::queue_ticker::QueueTicker;
+use log::error;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::any::Any;
@@ -17,45 +18,24 @@ pub trait Matchmaker {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct UnratedMatchmaker {
+pub struct Unrated {
     pub(crate) team_size: u64,
     pub(crate) number_of_teams: u64,
-    #[serde(skip_deserializing, skip_serializing)]
-    pub(crate) addends: Vec<HashMap<u64, u32>>,
+    pub(crate) addends: Vec<HashMap<u64, u64>>,
 }
 
-impl UnratedMatchmaker {
+impl Unrated {
+    #[allow(clippy::unnecessary_box_returns)]
     pub fn new(team_size: u64, number_of_teams: u64) -> Box<Self> {
-        Box::new(UnratedMatchmaker {
+        Box::new(Unrated {
             team_size,
             number_of_teams,
-            addends: addends::find_associate_addends(team_size),
+            addends: addends::find(team_size),
         })
     }
-
-    pub fn find_valid_addend<'a>(
-        &self,
-        addends: &'a [HashMap<u64, u32>],
-        queue_by_size: &HashMap<u64, Vec<&QueueEntry>>,
-    ) -> Option<&'a HashMap<u64, u32>> {
-        if let Some(x) = addends.iter().next() {
-            for (ref_key, ref_needed_players) in x {
-                let in_queue_by_size =
-                    queue_by_size.get(ref_key).unwrap_or(&Vec::new()).len() as u32;
-
-                if &in_queue_by_size < ref_needed_players {
-                    return None;
-                }
-            }
-            return Some(x);
-        }
-
-        None
-    }
-
     pub fn create_unrated_queue(
         name: String,
-        body: Value,
+        body: &Value,
     ) -> Result<Arc<Mutex<QueueTicker>>, String> {
         let team_size = body
             .get("team_size")
@@ -71,17 +51,18 @@ impl UnratedMatchmaker {
 
         Ok(QueueTicker::new(
             Queue::new(name),
-            UnratedMatchmaker::new(team_size, number_of_teams),
-            Box::new(crate::FakeGameProvider {}),
+            Unrated::new(team_size, number_of_teams),
+            Box::new(crate::FakeGame {}),
         ))
     }
 }
 
-impl Matchmaker for UnratedMatchmaker {
+impl Matchmaker for Unrated {
     fn namespace(&self) -> &str {
         "unrated"
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn matchmake(&self, in_queue: &[QueueEntry]) -> Result<Vec<Vec<Uuid>>, String> {
         let mut queue_by_size: HashMap<u64, Vec<&QueueEntry>> = HashMap::new();
 
@@ -97,10 +78,10 @@ impl Matchmaker for UnratedMatchmaker {
         let mut teams: Vec<Vec<Uuid>> = Vec::new();
 
         for _x in 0..self.number_of_teams {
-            let addend = self.find_valid_addend(&self.addends, &queue_by_size);
+            let addend = find_valid_addend(&self.addends, &queue_by_size);
             if addend.is_none() {
                 return Err(String::from(
-                    "Unable to build the required amount of teams.",
+                    "Unable to build the required amount of teams (1).",
                 ));
             }
             let addend = addend.unwrap();
@@ -111,7 +92,7 @@ impl Matchmaker for UnratedMatchmaker {
                 let teams_ref_opt = queue_by_size.get_mut(entry_size);
                 if teams_ref_opt.is_none() {
                     return Err(String::from(
-                        "Unable to build the required amount of teams.",
+                        "Unable to build the required amount of teams (2).",
                     ));
                 }
                 let teams_ref = teams_ref_opt.unwrap();
@@ -125,15 +106,15 @@ impl Matchmaker for UnratedMatchmaker {
                         Some(x) => entries.push(x.id),
                         None => {
                             return Err(String::from(
-                                "Unable to build the required amount of teams.",
-                            ))
+                                "Unable to build the required amount of teams (3).",
+                            ));
                         }
                     }
                 }
 
                 if entries.len() != number_of_teams_usize {
                     return Err(String::from(
-                        "Unable to build the required amount of teams.",
+                        "Unable to build the required amount of teams. (4)",
                     ));
                 }
 
@@ -150,6 +131,7 @@ impl Matchmaker for UnratedMatchmaker {
         if queue_entry.players.len() as u64 <= self.team_size {
             Ok(true)
         } else {
+            error!("Team size cannot exceed {} players", self.team_size);
             Err(format!(
                 "Team size cannot exceed {} players",
                 self.team_size
@@ -162,4 +144,20 @@ impl Matchmaker for UnratedMatchmaker {
     }
 }
 
-pub struct EloMatchmaker {}
+pub fn find_valid_addend<'a>(
+    addends: &'a [HashMap<u64, u64>],
+    queue_by_size: &HashMap<u64, Vec<&QueueEntry>>,
+) -> Option<&'a HashMap<u64, u64>> {
+    if let Some(x) = addends.iter().next() {
+        for (ref_key, ref_needed_players) in x {
+            let in_queue_by_size = queue_by_size.get(ref_key).unwrap_or(&Vec::new()).len() as u64;
+
+            if &in_queue_by_size < ref_needed_players {
+                return None;
+            }
+        }
+        return Some(x);
+    }
+
+    None
+}

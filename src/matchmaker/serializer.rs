@@ -1,18 +1,19 @@
-use crate::matchmaker::matchmaker::{Matchmaker, UnratedMatchmaker};
+use crate::matchmaker::implementations;
+use crate::matchmaker::implementations::Matchmaker;
 use serde_json::Value;
 use std::collections::HashMap;
 
-pub struct SerializerRegistry {
+pub struct Registry {
     registry: HashMap<String, Box<dyn Serializer>>,
 }
 
-impl SerializerRegistry {
+impl Registry {
     pub fn new() -> Self {
-        let mut registry = SerializerRegistry {
+        let mut registry = Registry {
             registry: HashMap::new(),
         };
 
-        registry.register(String::from("unrated"), Box::new(UnratedSerializer {}));
+        registry.register(String::from("unrated"), Box::new(Unrated {}));
 
         registry
     }
@@ -21,24 +22,26 @@ impl SerializerRegistry {
         self.registry.insert(namespace, serializer);
     }
 
-    pub fn get(&self, namespace: String) -> Option<&Box<dyn Serializer>> {
-        self.registry.get(&namespace).take()
+    #[allow(clippy::borrowed_box)]
+    pub fn get(&self, namespace: &str) -> Option<&Box<dyn Serializer>> {
+        self.registry.get(namespace).take()
     }
 }
 
 pub trait Serializer {
+    #[allow(clippy::borrowed_box)]
     fn serialize(&self, matchmaker: &Box<dyn Matchmaker + Send + Sync>) -> Result<Value, String>;
 
     fn deserialize(&self, data: Value) -> Result<Box<dyn Matchmaker + Send + Sync>, String>;
 }
 
-pub struct UnratedSerializer;
+pub struct Unrated;
 
-impl Serializer for UnratedSerializer {
+impl Serializer for Unrated {
     fn serialize(&self, matchmaker: &Box<dyn Matchmaker + Send + Sync>) -> Result<Value, String> {
         let matchmaker = matchmaker
             .as_any()
-            .downcast_ref::<UnratedMatchmaker>()
+            .downcast_ref::<implementations::Unrated>()
             .ok_or("Invalid type provided for UnratedMatchmaker")?;
 
         serde_json::to_value(matchmaker)
@@ -46,7 +49,7 @@ impl Serializer for UnratedSerializer {
     }
 
     fn deserialize(&self, data: Value) -> Result<Box<dyn Matchmaker + Send + Sync>, String> {
-        let matchmaker: UnratedMatchmaker =
+        let matchmaker: implementations::Unrated =
             serde_json::from_value(data).map_err(|x| x.to_string())?;
 
         Ok(Box::new(matchmaker))

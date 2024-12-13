@@ -1,3 +1,2 @@
-// pub mod endpoints;
-pub mod endpoints;
-pub mod requests;
+pub mod queue_endpoints;
+pub mod queue_sockets;

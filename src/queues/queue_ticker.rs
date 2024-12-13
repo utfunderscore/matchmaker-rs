@@ -1,9 +1,9 @@
-use crate::game::game::Game;
-use crate::game::game_provider::{FakeGameProvider, GameProvider};
-use crate::matchmaker::matchmaker::Matchmaker;
-use crate::matchmaker::serializer::SerializerRegistry;
+use crate::game::providers::{FakeGame, Game, GameProvider};
+use crate::matchmaker::implementations::Matchmaker;
+use crate::matchmaker::serializer::Registry;
 use crate::queues::queue::Queue;
 use crate::queues::queue_entry::QueueEntry;
+use log::{debug, info};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -50,13 +50,18 @@ impl QueueTicker {
     }
 
     fn tick(&mut self) {
-        let matchmaker_result = self.matchmaker.matchmake(&self.queue.in_queue);
+        let matchmaker_result = self.matchmaker.matchmake(&self.queue.entries);
         if matchmaker_result.is_err() {
+            debug!(
+                "Failed to tick queue {}: {}",
+                self.queue.name,
+                matchmaker_result.err().unwrap()
+            );
             return;
         }
         let teams = matchmaker_result.unwrap();
 
-        println!("teams {:?}", teams);
+        println!("teams {teams:?}",);
 
         let game_result = self.game_producer.get_game_server();
         if game_result.is_err() {
@@ -64,10 +69,12 @@ impl QueueTicker {
         }
         let game = game_result.unwrap();
 
+        info!("  - Matchmaker success!");
+
         for team in teams {
             for entry_id in team {
                 if let Err(e) = self.queue.remove_team(&entry_id) {
-                    eprintln!("Failed to remove team from the queue: {}", e);
+                    eprintln!("Failed to remove team from the queue: {e}");
                 } else {
                     self.try_notify_socket(&entry_id, game.clone());
                 }
@@ -82,20 +89,21 @@ impl QueueTicker {
         }
 
         let removed = self.entry_channels.remove(entry_id).unwrap();
-        removed.send(Ok(game)).unwrap()
+        removed.send(Ok(game)).unwrap();
     }
 
     pub fn add_team(
         &mut self,
         queue_entry: QueueEntry,
     ) -> Result<Receiver<Result<Game, String>>, String> {
+        let queue_entry_id = queue_entry.id;
+
         self.matchmaker.validate_entry(&queue_entry)?;
+        self.get_queue_mut().add_team(queue_entry)?;
 
         let (sender, receiver) = channel::<Result<Game, String>>();
 
-        self.add_channel(queue_entry.id, sender);
-
-        self.get_queue_mut().add_team(queue_entry)?;
+        self.add_channel(queue_entry_id, sender);
 
         Ok(receiver)
     }
@@ -115,13 +123,13 @@ impl QueueTicker {
 
 // Serialization & Deserialization
 impl QueueTicker {
-    pub fn save(&self, matchmaker_registry: &SerializerRegistry) -> Result<Value, String> {
+    pub fn save(&self, matchmaker_registry: &Registry) -> Result<Value, String> {
         let mut json: HashMap<String, Value> = HashMap::new();
 
         let namespace = self.matchmaker.namespace();
 
         let serializer = matchmaker_registry
-            .get(String::from(namespace))
+            .get(namespace)
             .ok_or("Could not find serializer")?;
 
         json.insert(String::from("name"), Value::String(self.queue.name.clone()));
@@ -139,10 +147,7 @@ impl QueueTicker {
         Ok(json!(json))
     }
 
-    pub fn load(
-        value: &Value,
-        serializer_registry: &SerializerRegistry,
-    ) -> Result<Arc<Mutex<Self>>, String> {
+    pub fn load(value: &Value, serializer_registry: &Registry) -> Result<Arc<Mutex<Self>>, String> {
         let queue_name = value
             .get("name")
             .ok_or("Could not find queue name")?
@@ -159,15 +164,15 @@ impl QueueTicker {
             .ok_or("Could not find matchmaker data")?;
 
         let serializer = serializer_registry
-            .get(String::from(namespace))
-            .ok_or(format!("Failed to find serializer for {}", namespace))?;
+            .get(namespace)
+            .ok_or(format!("Failed to find serializer for {namespace}"))?;
 
         let matchmaker = serializer.deserialize(data.clone())?;
 
         let ticker = Self::new(
             Queue::new(String::from(queue_name)),
             matchmaker,
-            Box::new(FakeGameProvider {}),
+            Box::new(FakeGame {}),
         );
 
         Ok(ticker)

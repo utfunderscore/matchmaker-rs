@@ -1,14 +1,21 @@
-use crate::api::endpoints;
-use crate::game::game_provider::FakeGameProvider;
-use crate::matchmaker::matchmaker::UnratedMatchmaker;
-use crate::matchmaker::serializer::SerializerRegistry;
-use crate::queues::queue_store::{FlatFileQueueStore, QueueStore};
+use crate::api::queue_endpoints;
+use crate::api::queue_sockets;
+use crate::game::providers::FakeGame;
+use crate::matchmaker::implementations::Unrated;
+use crate::matchmaker::serializer::Registry;
+use crate::queues::queue_entry::QueueEntry;
+use crate::queues::queue_store::{FlatFile, QueueStore};
 use actix_web::middleware::Logger;
 use actix_web::{web, App, HttpServer};
+use chrono::Local;
+use log::{info, LevelFilter};
+use serde_json::Value;
 use std::io::Error;
 use std::io::ErrorKind::Other;
+use std::io::Write;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use uuid::Uuid;
 use web::Data;
 
 mod api;
@@ -18,19 +25,39 @@ mod queues;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let queue_store = FlatFileQueueStore::new(String::from("test.json"), SerializerRegistry::new());
+    let queue_store = FlatFile::new(String::from("queues.json"), Registry::new());
     let mut queue_pool = queue_store.load().map_err(|x| Error::new(Other, x))?;
 
     queue_pool.add_creator(
         String::from("unrated"),
-        Box::new(UnratedMatchmaker::create_unrated_queue),
+        Box::new(Unrated::create_unrated_queue),
+    );
+
+    let test = QueueEntry {
+        id: Uuid::new_v4(),
+        players: vec![Uuid::new_v4()],
+        attributes: Value::default(),
+    };
+
+    println!(
+        "Queue join request: {:?}",
+        serde_json::to_string(&test).unwrap()
     );
 
     let queue_data = Arc::new(Mutex::new(queue_pool));
 
-    std::env::set_var("RUST_LOG", "actix_web=debug,actix_server=debug");
-
-    env_logger::init();
+    env_logger::Builder::new()
+        .format(|buf, record| {
+            writeln!(
+                buf,
+                "{} [{}] - {}",
+                Local::now().format("%Y-%m-%dT%H:%M:%S"),
+                record.level(),
+                record.args()
+            )
+        })
+        .filter(None, LevelFilter::Info)
+        .init();
 
     HttpServer::new({
         let inner_queue_data = queue_data.clone();
@@ -40,15 +67,17 @@ async fn main() -> std::io::Result<()> {
             App::new()
                 .wrap(Logger::default())
                 .app_data(data)
-                .service(endpoints::get_queues)
-                .service(endpoints::create_queue)
-                .service(endpoints::ws)
+                .service(queue_endpoints::get_queues)
+                .service(queue_endpoints::create_queue)
+                .service(queue_sockets::join_queue_socket)
         }
     })
     .workers(4)
     .bind(("localhost", 8383))?
     .run()
     .await?;
+
+    info!("Saving queues...");
 
     queue_store
         .save(queue_data.clone())

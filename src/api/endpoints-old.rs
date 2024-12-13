@@ -35,10 +35,10 @@ pub fn create_queue(
 ) -> Json<Result<Queue, String>> {
     let queue_pool_lock = queue_pool_mutex.lock();
 
-    if let Err(e) = queue_pool_mutex.lock() {
+    if let Err(e) = queue_pool_lock {
         return Json(Err(e.to_string()));
     }
-    let mut queue_pool = queue_pool_lock.unwrap();
+    let mut queue_pool: QueuePool = queue_pool_lock.unwrap();
 
     Json(queue_pool.create_queue(String::from(id), String::from(creator), queue_data.0))
 }

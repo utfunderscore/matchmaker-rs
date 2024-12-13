@@ -1,4 +1,4 @@
-use crate::matchmaker::serializer::SerializerRegistry;
+use crate::matchmaker::serializer::Registry;
 use crate::queues::queue_pool::QueuePool;
 use crate::queues::queue_ticker::QueueTicker;
 use serde_json::Value;
@@ -13,14 +13,14 @@ pub trait QueueStore {
     async fn save(&self, queue_pool: Arc<Mutex<QueuePool>>) -> Result<(), String>;
 }
 
-pub struct FlatFileQueueStore {
+pub struct FlatFile {
     path: String,
-    serializer_registry: SerializerRegistry,
+    serializer_registry: Registry,
 }
 
-impl FlatFileQueueStore {
-    pub fn new(path: String, serializer_registry: SerializerRegistry) -> FlatFileQueueStore {
-        FlatFileQueueStore {
+impl FlatFile {
+    pub fn new(path: String, serializer_registry: Registry) -> FlatFile {
+        FlatFile {
             path,
             serializer_registry,
         }
@@ -35,7 +35,7 @@ impl FlatFileQueueStore {
     }
 }
 
-impl QueueStore for FlatFileQueueStore {
+impl QueueStore for FlatFile {
     fn load(&self) -> Result<QueuePool, String> {
         let mut queue_pool = QueuePool::new();
         let reader = BufReader::new(self.get_read_file()?);
@@ -46,7 +46,7 @@ impl QueueStore for FlatFileQueueStore {
         for value in json_array {
             let matchmaker = QueueTicker::load(value, &self.serializer_registry)?;
 
-            queue_pool.add_ticker(matchmaker)?
+            queue_pool.add_ticker(matchmaker)?;
         }
 
         Ok(queue_pool)
@@ -60,12 +60,12 @@ impl QueueStore for FlatFileQueueStore {
         let queues = queue_pool
             .queue_tickers
             .read()
-            .map_err(|x| format!("{:?}", x))?;
+            .map_err(|x| format!("{x:?}"))?;
 
         let mut serialized_queues: Vec<Value> = Vec::new();
 
         for x in queues.values() {
-            let queue = x.lock().map_err(|x| format!("{:?}", x))?;
+            let queue = x.lock().map_err(|x| format!("{x:?}"))?;
 
             let save_result = queue.save(&self.serializer_registry);
             if save_result.is_err() {
@@ -78,11 +78,7 @@ impl QueueStore for FlatFileQueueStore {
             }
             serialized_queues.push(save_result?);
         }
-
-        println!("test : {:?}", serialized_queues);
-
-        serde_json::to_writer(writer, &serialized_queues).map_err(|x| format!("{:?}", x))?;
-
+        serde_json::to_writer(writer, &serialized_queues).map_err(|x| format!("{x:?}"))?;
         Ok(())
     }
 }
