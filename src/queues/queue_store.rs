@@ -3,7 +3,8 @@ use crate::queues::queue_pool::QueuePool;
 use crate::queues::queue_ticker::QueueTicker;
 use serde_json::Value;
 use std::fs::File;
-use std::io::{BufReader, BufWriter};
+use std::io::{BufReader, BufWriter, Write};
+use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -37,6 +38,11 @@ impl FlatFile {
 
 impl QueueStore for FlatFile {
     fn load(&self) -> Result<QueuePool, String> {
+        if !Path::exists(self.path.clone().as_ref()) {
+            let mut file = self.get_write_file()?;
+            file.write_all("[]".as_bytes()).map_err(|x| x.to_string())?;
+        }
+
         let mut queue_pool = QueuePool::new();
         let reader = BufReader::new(self.get_read_file()?);
 
