@@ -80,7 +80,7 @@ async fn main() -> std::io::Result<()> {
         }
     })
     .workers(4)
-    .bind(("localhost", 8383))?
+    .bind(("0.0.0.0", 8383))?
     .run()
     .await?;
 
