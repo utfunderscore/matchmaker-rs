@@ -31,7 +31,7 @@ async fn create_queue(
     let queue_id: String = queue_id.into_inner();
 
     let queue = queue_pool
-        .create_queue(queue_id, &queue_type.0, &body.0)
+        .create_queue(queue_id, &queue_type.into_inner(), &body.into_inner())
         .map_err(|e| Error::new(ErrorKind::Other, e.to_string()))?;
 
     Ok(Json(queue))
