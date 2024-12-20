@@ -12,7 +12,7 @@ use uuid::Uuid;
 pub async fn join_queue_socket(
     req: HttpRequest,
     queue_id: web::Path<String>,
-    queue_pool: web::Data<Arc<Mutex<QueuePool>>>,
+    queue_pool: Data<Arc<Mutex<QueuePool>>>,
     body: web::Payload,
 ) -> actix_web::Result<impl Responder> {
     let (response, session, mut msg_stream) = actix_ws::handle(&req, body)?;
@@ -21,7 +21,7 @@ pub async fn join_queue_socket(
 
     actix_web::rt::spawn({
         let thread_session = session.clone();
-
+        let session_id = Uuid::new_v4();
         async move {
             while let Some(Ok(msg)) = msg_stream.recv().await {
                 match msg {
@@ -31,6 +31,13 @@ pub async fn join_queue_socket(
                             return;
                         }
                     }
+
+                    Message::Close(code) => {
+                        let queue_pool = queue_pool.lock().await;
+                        queue_pool.invalidate_session(session_id);
+                        return;
+                    }
+
                     Message::Text(text) => {
                         info!("Received websocket message {}", text);
 
@@ -47,6 +54,7 @@ pub async fn join_queue_socket(
                         }
 
                         queue_join_request(
+                            session_id,
                             queue_id.clone(),
                             join_request_result.unwrap(),
                             queue_pool.clone(),
@@ -63,6 +71,7 @@ pub async fn join_queue_socket(
 }
 
 fn queue_join_request(
+    session_id: Uuid,
     queue_name: String,
     queue_entry: QueueEntry,
     queue_pool_data: Data<Arc<Mutex<QueuePool>>>,
@@ -79,9 +88,9 @@ fn queue_join_request(
 
         let queue_pool_data = queue_pool_data.clone();
 
-        let queue_pool = queue_pool_data.lock().await;
+        let mut queue_pool = queue_pool_data.lock().await;
 
-        let receiver = queue_pool.join_queue(&queue_name, queue_entry);
+        let receiver = queue_pool.join_queue(session_id, &queue_name, queue_entry);
         if receiver.is_err() {
             let mut channel = channel.lock().await;
             let receiver_err = receiver.err().unwrap_or(String::new());

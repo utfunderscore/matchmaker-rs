@@ -8,6 +8,7 @@ use uuid::Uuid;
 pub struct Queue {
     pub name: String,
     pub entries: Vec<QueueEntry>,
+    #[serde(skip_serializing)]
     pub players: HashSet<Uuid>,
 }
 

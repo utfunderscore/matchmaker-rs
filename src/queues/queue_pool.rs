@@ -4,6 +4,7 @@ use crate::queues::queue_entry::QueueEntry;
 use crate::queues::queue_ticker::QueueTicker;
 use log::error;
 use serde_json::Value;
+use std::arch::x86_64::_xsaves64;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 use tokio::sync::oneshot::Receiver;
@@ -25,17 +26,9 @@ impl QueuePool {
         }
     }
 
-    pub fn add_ticker(&mut self, queue: Arc<Mutex<QueueTicker>>) -> Result<(), String> {
-        let queues = self.queue_tickers.get_mut().map_err(|x| format!("{x:?}"))?;
-
-        let name = queue.lock().unwrap().get_queue().name.clone();
-        queues.insert(name, queue);
-
-        Ok(())
-    }
-
     pub fn join_queue(
-        &self,
+        &mut self,
+        socket_session_id: Uuid,
         queue_name: &String,
         queue_entry: QueueEntry,
     ) -> Result<Receiver<Result<providers::Game, String>>, String> {
@@ -53,7 +46,9 @@ impl QueuePool {
 
         let mut queue_ticker = queue_ticker.lock().map_err(|x| format!("{x:?}"))?;
 
-        queue_ticker.add_team(queue_entry)
+        let receiver = queue_ticker.add_team(socket_session_id, queue_entry)?;
+
+        Ok(receiver)
     }
 
     pub fn leave_queue(&self, queue_name: &String, entry_id: &Uuid) -> Result<(), String> {
@@ -72,14 +67,24 @@ impl QueuePool {
         Ok(())
     }
 
-    ///Creates a copy of the current existing queues
-    pub fn get_queues(&self) -> Result<Vec<Queue>, String> {
-        let queue_tickers = self.queue_tickers.read().map_err(|x| format!("{x}"))?;
+    pub fn invalidate_session(&self, session_id: Uuid) {
+        let queues_lock = self.queue_tickers.write().map_err(|x| x.to_string());
+        if let Ok(queues) = queues_lock {
+            for queue_ticker_mutex in queues.values() {
+                if let Ok(mut x) = queue_ticker_mutex.lock() {
+                    x.remove_session(&session_id);
+                }
+            }
+        }
+    }
 
-        Ok(queue_tickers
-            .values()
-            .map(|x| x.lock().unwrap().get_queue().clone())
-            .collect())
+    pub fn add_ticker(&mut self, queue: Arc<Mutex<QueueTicker>>) -> Result<(), String> {
+        let queues = self.queue_tickers.get_mut().map_err(|x| format!("{x:?}"))?;
+
+        let name = queue.lock().unwrap().get_queue().name.clone();
+        queues.insert(name, queue);
+
+        Ok(())
     }
 
     pub fn add_creator(&mut self, creator_name: String, creator: QueueCreatorFunc) {
@@ -117,9 +122,19 @@ impl QueuePool {
         Ok(queue)
     }
 
-    pub fn queue_exists(&self, queue_name: &String) -> bool {
+    pub fn queue_exists(&self, queue_name: &str) -> bool {
         let queue_ticker = self.queue_tickers.read();
 
         queue_ticker.unwrap().contains_key(queue_name)
+    }
+
+    ///Creates a copy of the current existing queues
+    pub fn get_queues(&self) -> Result<Vec<Queue>, String> {
+        let queue_tickers = self.queue_tickers.read().map_err(|x| format!("{x}"))?;
+
+        Ok(queue_tickers
+            .values()
+            .map(|x| x.lock().unwrap().get_queue().clone())
+            .collect())
     }
 }

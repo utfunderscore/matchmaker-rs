@@ -2,6 +2,7 @@ use crate::queues::queue_pool::QueuePool;
 use actix_web::web::Json;
 use actix_web::{get, put, web, Responder};
 use serde_json::Value;
+use std::io::ErrorKind::Other;
 use std::io::{Error, ErrorKind};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -29,6 +30,10 @@ async fn create_queue(
     let mut queue_pool = queue_pool.lock().await;
 
     let queue_id: String = queue_id.into_inner();
+
+    if queue_pool.queue_exists(&queue_id) {
+        return Err(Error::new(Other, "Queue already exists with that name"));
+    }
 
     let queue = queue_pool
         .create_queue(queue_id, &queue_type.into_inner(), &body.into_inner())

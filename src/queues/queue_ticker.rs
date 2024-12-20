@@ -3,6 +3,7 @@ use crate::matchmaker::implementations::Matchmaker;
 use crate::matchmaker::serializer::Registry;
 use crate::queues::queue::Queue;
 use crate::queues::queue_entry::QueueEntry;
+use actix_web::http::header::q;
 use log::{debug, info};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -16,6 +17,7 @@ pub struct QueueTicker {
     matchmaker: Box<dyn Matchmaker + Send + Sync>,
     game_producer: Box<dyn GameProvider + Send + Sync>,
     entry_channels: HashMap<Uuid, Sender<Result<Game, String>>>,
+    sessions: HashMap<Uuid, Vec<Uuid>>,
 }
 impl QueueTicker {
     pub fn new(
@@ -28,6 +30,7 @@ impl QueueTicker {
             matchmaker,
             game_producer,
             entry_channels: HashMap::new(),
+            sessions: HashMap::new(),
         };
 
         let ticker_arc = Arc::new(Mutex::new(ticker));
@@ -94,6 +97,7 @@ impl QueueTicker {
 
     pub fn add_team(
         &mut self,
+        session_id: Uuid,
         queue_entry: QueueEntry,
     ) -> Result<Receiver<Result<Game, String>>, String> {
         let queue_entry_id = queue_entry.id;
@@ -104,8 +108,28 @@ impl QueueTicker {
         let (sender, receiver) = channel::<Result<Game, String>>();
 
         self.add_channel(queue_entry_id, sender);
+        self.sessions
+            .entry(session_id)
+            .or_insert_with(|| vec![queue_entry_id]);
 
         Ok(receiver)
+    }
+
+    pub fn remove_team(&mut self, team_id: &Uuid) -> Result<bool, String> {
+        self.entry_channels.remove(team_id);
+        for x in self.sessions.values_mut() {
+            x.retain_mut(|x| x != team_id);
+        }
+        self.queue.remove_team(team_id)
+    }
+
+    pub fn remove_session(&mut self, session_id: &Uuid) {
+        let entry_ids_opt = self.sessions.remove(session_id);
+        if let Some(entry_ids) = entry_ids_opt {
+            for x in entry_ids {
+                let _ = self.remove_team(&x);
+            }
+        }
     }
 
     pub fn add_channel(&mut self, entry_id: Uuid, sender: Sender<Result<Game, String>>) {

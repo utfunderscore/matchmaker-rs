@@ -8,7 +8,7 @@ use crate::queues::queue_store::{FlatFile, QueueStore};
 use actix_web::middleware::Logger;
 use actix_web::{web, App, HttpServer};
 use chrono::Local;
-use log::{error, info, warn, LevelFilter};
+use log::{error, info, LevelFilter};
 use serde_json::Value;
 use std::io::Error;
 use std::io::ErrorKind::Other;
@@ -27,13 +27,12 @@ mod queues;
 async fn main() -> std::io::Result<()> {
     let matchmaker_registry = Registry::new();
     let queue_store = FlatFile::new(String::from("queues.json"), matchmaker_registry);
-    let mut queue_pool = queue_store.load().map_err(|x| Error::new(Other, x));
+    let queue_pool = queue_store.load().map_err(|x| Error::new(Other, x));
     if let Err(err) = queue_pool {
         error!("Failed to load queue: {}", err);
         return Err(err);
     }
     let mut queue_pool = queue_pool?;
-
 
     queue_pool.add_creator(
         String::from("unrated"),
