@@ -4,7 +4,6 @@ use crate::queues::queue_entry::QueueEntry;
 use crate::queues::queue_ticker::QueueTicker;
 use log::error;
 use serde_json::Value;
-use std::arch::x86_64::_xsaves64;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 use tokio::sync::oneshot::Receiver;

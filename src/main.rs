@@ -9,7 +9,7 @@ use actix_web::middleware::Logger;
 use actix_web::{web, App, HttpServer};
 use chrono::Local;
 use log::{error, info, LevelFilter};
-use serde_json::Value;
+use serde_json::{to_string, Value};
 use std::io::Error;
 use std::io::ErrorKind::Other;
 use std::io::Write;
@@ -45,10 +45,7 @@ async fn main() -> std::io::Result<()> {
         attributes: Value::default(),
     };
 
-    println!(
-        "Queue join request: {:?}",
-        serde_json::to_string(&test).unwrap()
-    );
+    println!("{}", to_string(&test)?);
 
     let queue_data = Arc::new(Mutex::new(queue_pool));
 

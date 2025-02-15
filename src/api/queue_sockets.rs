@@ -32,7 +32,7 @@ pub async fn join_queue_socket(
                         }
                     }
 
-                    Message::Close(code) => {
+                    Message::Close(_) => {
                         let queue_pool = queue_pool.lock().await;
                         queue_pool.invalidate_session(session_id);
                         return;

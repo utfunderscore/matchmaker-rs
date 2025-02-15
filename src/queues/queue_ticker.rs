@@ -3,7 +3,6 @@ use crate::matchmaker::implementations::Matchmaker;
 use crate::matchmaker::serializer::Registry;
 use crate::queues::queue::Queue;
 use crate::queues::queue_entry::QueueEntry;
-use actix_web::http::header::q;
 use log::{debug, info};
 use serde_json::{json, Value};
 use std::collections::HashMap;
