@@ -50,5 +50,5 @@ pub trait Matchmaker<T> where T : queue_entry::QueueEntry {
     /// - There are not enough players to form valid teams
     /// - The team sizes are incompatible with the matchmaking rules
     /// - Other algorithm-specific constraints cannot be satisfied
-    fn matchmake(&self, teams: &Vec<T>) -> Result<Vec<Vec<Uuid>>, String>;
+    fn matchmake(&self, teams: &Vec<Box<T>>) -> Result<Vec<Vec<Uuid>>, String>;
 }

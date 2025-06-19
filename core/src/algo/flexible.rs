@@ -2,6 +2,7 @@ use crate::matchmaker::Matchmaker;
 use crate::queue_entry::QueueEntry;
 use uuid::Uuid;
 
+
 pub struct FlexibleMatchMaker {
     name: String,
     target_team_size: i16,
@@ -12,7 +13,7 @@ pub struct FlexibleMatchMaker {
 }
 
 impl FlexibleMatchMaker {
-
+    
     pub fn new(
         name: String,
         target_team_size: i16,
@@ -58,7 +59,7 @@ impl QueueEntry for FlexibleQueueEntry {
 }
 
 impl Matchmaker<FlexibleQueueEntry> for FlexibleMatchMaker {
-    fn matchmake(&self, teams: &Vec<FlexibleQueueEntry>) -> Result<Vec<Vec<Uuid>>, String> {
+    fn matchmake(&self, teams: &Vec<Box<FlexibleQueueEntry>>) -> Result<Vec<Vec<Uuid>>, String> {
         let total_players: usize = teams.iter().map(|team| team.players.len()).sum();
 
         if (total_players as i32) < (self.target_team_size as i32) * (self.num_teams as i32) {
@@ -230,7 +231,7 @@ mod tests {
         let team1 = FlexibleQueueEntry::new(Uuid::new_v4(), vec![Uuid::new_v4()]);
         let team2 = FlexibleQueueEntry::new(Uuid::new_v4(), vec![Uuid::new_v4()]);
 
-        let teams = vec![team1, team2];
+        let teams = vec![Box::new(team1), Box::new(team2)];
 
         let result = matchmaker.matchmake(&teams);
         
@@ -248,7 +249,7 @@ mod tests {
         ).unwrap();
 
         let team1 = FlexibleQueueEntry::new(Uuid::new_v4(), vec![Uuid::new_v4()]);
-        let teams = vec![team1];
+        let teams = vec![Box::new(team1)];
 
         let result = matchmaker.matchmake(&teams);
         

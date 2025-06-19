@@ -8,7 +8,7 @@ use uuid::Uuid;
 /// A queue that manages teams and performs matchmaking.
 ///
 /// A queue is a collection of queue entries (teams or players) that are to be matched
-/// together using the provided matchmaker. It will handle 
+/// together base
 ///
 /// # Type Parameters
 ///
@@ -32,9 +32,9 @@ use uuid::Uuid;
 /// // Perform matchmaking
 /// let matches = queue.matchmake().unwrap();
 /// ```
-pub struct Queue<T> {
+pub struct Queue<T: ?Sized> {
     name: String,
-    teams: HashMap<Uuid, T>,
+    teams: HashMap<Uuid, Box<T>>,
     matchmaker: Box<dyn Matchmaker<T>>,
 }
 
@@ -79,7 +79,7 @@ where
         if self.teams.contains_key(&team.id()) {
             return Err("Team already exists in the queue".to_string());
         }
-        self.teams.insert(team.id(), team);
+        self.teams.insert(team.id(), Box::new(team));
         Ok(())
     }
 
@@ -93,8 +93,8 @@ where
     ///
     /// * `Some(T)` - The removed team, if it was found in the queue
     /// * `None` - If no team with the specified ID was found in the queue
-    pub fn remove_team(&mut self, team: &T) -> Option<T> {
-        self.teams.remove(&team.id())
+    pub fn remove_team(&mut self, team_id: Uuid) -> Option<T> {
+        self.teams.remove(&team_id).map(|team| *team)
     }
 
     /// Performs matchmaking on the teams in the queue.
@@ -117,7 +117,7 @@ where
     /// - The team compositions are incompatible with the matchmaking rules
     /// - Other algorithm-specific constraints cannot be satisfied
     pub fn matchmake(&mut self) -> Result<Vec<Vec<T>>, String> {
-        let teams: Vec<T> = self.teams.values().into_iter().cloned().collect();
+        let teams: Vec<Box<T>> = self.teams.values().into_iter().cloned().collect();
 
         let teams = self.matchmaker.matchmake(&teams)?;
 
@@ -126,7 +126,7 @@ where
             .map(|team_ids| {
                 team_ids
                     .into_iter()
-                    .filter_map(|id| self.teams.remove(&id))
+                    .filter_map(|id| self.teams.remove(&id).map(|x| *x))
                     .collect::<Vec<T>>()
             })
             .collect::<Vec<Vec<T>>>();
