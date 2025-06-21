@@ -83,6 +83,26 @@ impl Matchmaker for FlexibleMatchMaker {
         Ok(results)
     }
 
+    fn validate_entry(&self, entry: &QueueEntry) -> Result<(), String> {
+        if entry.entries.len() < self.min_entry_size as usize {
+            return Err(format!(
+                "Entry size {} is less than minimum required size {}",
+                entry.entries.len(),
+                self.min_entry_size
+            ));
+        }
+
+        if entry.entries.len() > self.max_entry_size as usize {
+            return Err(format!(
+                "Entry size {} exceeds maximum allowed size {}",
+                entry.entries.len(),
+                self.max_entry_size
+            ));
+        }
+
+        Ok(())
+    }
+
     fn serialize(&self) -> Result<Value, String> {
         serde_json::to_value(self)
             .map_err(|e| format!("Error serializing matchmaker settings: {}", e))

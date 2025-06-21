@@ -1,10 +1,10 @@
-use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use axum::Json;
 use common::queue::Queue;
-use common::registry::{Registry, ThreadMatchmaker};
+use common::registry::Registry;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 

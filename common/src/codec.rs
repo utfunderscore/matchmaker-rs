@@ -7,32 +7,28 @@ pub type MatchmakerSerializer = fn(&Box<ThreadMatchmaker>) -> Result<Value, Stri
 
 #[derive(Clone)]
 pub struct Codec {
-    deserializers: HashMap<String, Box<MatchmakerDeserializer>>,
-    serializers: HashMap<String, Box<MatchmakerSerializer>>,
+    deserializers: HashMap<String, MatchmakerDeserializer>,
+}
+
+impl Default for Codec {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Codec {
     pub fn new() -> Codec {
         Codec {
             deserializers: HashMap::new(),
-            serializers: HashMap::new(),
         }
     }
 
     pub fn register_deserializer(&mut self, name: &str, constructor: MatchmakerDeserializer) {
         self.deserializers
-            .insert(name.to_lowercase(), Box::new(constructor));
+            .insert(name.to_lowercase(), constructor);
     }
 
-    pub fn get_deserializer(&self, name: &str) -> Option<&Box<MatchmakerDeserializer>> {
+    pub fn get_deserializer(&self, name: &str) -> Option<&MatchmakerDeserializer> {
         self.deserializers.get(&name.to_lowercase())
-    }
-
-    pub fn register_serializer(&mut self, name: &str, constructor: Box<MatchmakerSerializer>) {
-        self.serializers.insert(name.to_lowercase(), constructor);
-    }
-
-    pub fn get_serializer(&self, name: &str) -> Option<&Box<MatchmakerSerializer>> {
-        self.serializers.get(&name.to_lowercase())
     }
 }

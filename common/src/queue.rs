@@ -19,6 +19,16 @@ impl Queue {
         }
     }
 
+    pub fn add_entry(&mut self, entry: QueueEntry) -> Result<(), String> {
+        if self.entries.contains_key(&entry.id) {
+            return Err("Entry already exists in the queue".to_string());
+        }
+        
+        
+        self.entries.insert(entry.id, entry);
+        Ok(())
+    }
+    
     pub fn tick(&mut self, registry: &Registry) -> Result<Vec<Vec<Uuid>>, String> {
         let matchmaker = registry.get_matchmaker(&self.matchmaker).ok_or("")?;
 

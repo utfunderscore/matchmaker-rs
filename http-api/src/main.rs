@@ -17,7 +17,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     codec.register_deserializer("flexible", flexible::DESERIALIZER);
 
-    let registry = Registry::new("./data", codec);
+    let registry = Registry::new("./queues", codec)?;
 
     let app_data = Arc::new(Mutex::new(registry));
 
