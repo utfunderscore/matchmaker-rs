@@ -6,8 +6,7 @@ use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 use uuid::Uuid;
 
-#[derive(Serialize, Deserialize)]
-#[derive(Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct FlexibleMatchMaker {
     target_team_size: i16,
     min_entry_size: i16,
@@ -34,17 +33,14 @@ impl FlexibleMatchMaker {
             valid_team_compositions,
         })
     }
-
-
-
 }
 
-pub static DESERIALIZER: MatchmakerDeserializer =
-    |settings: Value| {
-        let mut matchmaker =  serde_json::from_value::<FlexibleMatchMaker>(settings).map_err(|e| format!("Error parsing matchmaker settings: {}", e))?;
-        matchmaker.valid_team_compositions = find_unique_addends(matchmaker.target_team_size)?;
-        Ok(Box::new(matchmaker))
-    };
+pub static DESERIALIZER: MatchmakerDeserializer = |settings: Value| {
+    let mut matchmaker = serde_json::from_value::<FlexibleMatchMaker>(settings)
+        .map_err(|e| format!("Error parsing matchmaker settings: {}", e))?;
+    matchmaker.valid_team_compositions = find_unique_addends(matchmaker.target_team_size)?;
+    Ok(Box::new(matchmaker))
+};
 
 impl Matchmaker for FlexibleMatchMaker {
     fn matchmake(&self, teams: Vec<QueueEntry>) -> Result<Vec<Vec<Uuid>>, String> {
@@ -88,7 +84,8 @@ impl Matchmaker for FlexibleMatchMaker {
     }
 
     fn serialize(&self) -> Result<Value, String> {
-        serde_json::to_value(self).map_err(|e| format!("Error serializing matchmaker settings: {}", e))
+        serde_json::to_value(self)
+            .map_err(|e| format!("Error serializing matchmaker settings: {}", e))
     }
 }
 

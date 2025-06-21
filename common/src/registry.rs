@@ -4,7 +4,6 @@ use std::collections::HashMap;
 
 pub type ThreadMatchmaker = dyn Matchmaker + Send + Sync;
 
-
 pub struct Registry {
     matchmakers: HashMap<String, Box<ThreadMatchmaker>>,
     queues: HashMap<String, Queue>,

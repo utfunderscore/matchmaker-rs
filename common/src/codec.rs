@@ -20,7 +20,8 @@ impl Codec {
     }
 
     pub fn register_deserializer(&mut self, name: &str, constructor: MatchmakerDeserializer) {
-        self.deserializers.insert(name.to_lowercase(), Box::new(constructor));
+        self.deserializers
+            .insert(name.to_lowercase(), Box::new(constructor));
     }
 
     pub fn get_deserializer(&self, name: &str) -> Option<&Box<MatchmakerDeserializer>> {

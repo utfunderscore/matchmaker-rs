@@ -1,13 +1,13 @@
 mod routes;
 
-use axum::routing::post;
 use axum::Router;
+use axum::routing::post;
 use common::algo::flexible;
+use common::codec::Codec;
 use common::registry::Registry;
 use std::error::Error;
-use std::sync::{Arc};
+use std::sync::Arc;
 use tokio::sync::Mutex;
-use common::codec::Codec;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -17,12 +17,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut codec = Codec::new();
 
     codec.register_deserializer("flexible", flexible::DESERIALIZER);
-    
-    let app_data = AppData {
-        registry,
-        codec,
-    };
-    
+
+    let app_data = AppData { registry, codec };
+
     let app_data = Arc::new(Mutex::new(app_data));
 
     let app = Router::new()
@@ -38,5 +35,5 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 struct AppData {
     registry: Registry,
-    codec: Codec,   
+    codec: Codec,
 }
