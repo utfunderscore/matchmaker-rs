@@ -1,11 +1,10 @@
-use crate::AppData;
 use axum::Json;
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use common::queue::Queue;
-use common::registry::ThreadMatchmaker;
+use common::registry::{Registry, ThreadMatchmaker};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -18,59 +17,48 @@ pub struct CreateQueueRequest {
 
 #[axum::debug_handler]
 pub async fn create_queue_route(
-    app_data: State<Arc<Mutex<AppData>>>,
+    registry: State<Arc<Mutex<Registry>>>,
     request: Json<CreateQueueRequest>,
 ) -> (StatusCode, Json<Value>) {
-    match create_queue(app_data.0, request.0).await {
+    match create_queue(registry.0, request.0).await {
         Ok(_) => (
             StatusCode::CREATED,
-            Json::from(serde_json::json!({"message": "Queue created successfully"})),
+            Json::from(json!({"message": "Queue created successfully"})),
         ),
-        Err(e) => (
-            StatusCode::BAD_REQUEST,
-            Json::from(serde_json::json!({"error": e})),
-        ),
+        Err(e) => (StatusCode::BAD_REQUEST, Json::from(json!({"error": e}))),
     }
 }
 
 pub async fn create_queue(
-    app_data: Arc<Mutex<AppData>>,
+    registry: Arc<Mutex<Registry>>,
     request: CreateQueueRequest,
 ) -> Result<(), String> {
-    let mut app_data = app_data.lock().await;
-
-    // Check if the matchmaker already exists
-    if app_data
-        .codec
-        .get_deserializer(&request.matchmaker)
-        .is_none()
-    {
-        return Err("Matchmaker does not exist".to_string());
-    }
-
-    // Check if the queue already exists
-    if app_data.registry.get_queue(&request.name).is_some() {
-        return Err("Queue already exists".to_string());
-    }
-
-    // Check if a matchmaker constructor is registered for the specified matchmaker
-    let constructor = app_data
-        .codec
-        .get_deserializer(&request.matchmaker)
-        .ok_or("Invalid matchmaker specified")?;
-
-    // Create the matchmaker using the constructor
-    let matchmaker: Box<ThreadMatchmaker> = constructor(request.settings)?;
-
-    // Register the matchmaker and queue in the registry
-    app_data
-        .registry
-        .register_matchmaker(&request.matchmaker, matchmaker);
+    let mut registry = registry.lock().await;
 
     // Create and register the queue
-    app_data
-        .registry
-        .register_queue(&request.name, Queue::new(request.name.clone()));
+    registry.register_queue(&request.name, &request.matchmaker, request.settings)?;
 
     Ok(())
+}
+
+#[axum::debug_handler]
+pub async fn get_queues_route(
+    registry: State<Arc<Mutex<Registry>>>,
+) -> (StatusCode, Json<Vec<Queue>>) {
+    let registry = registry.0.lock().await;
+    (StatusCode::OK, Json::from(registry.get_queues()))
+}
+#[axum::debug_handler]
+pub async fn get_queue(
+    registry: State<Arc<Mutex<Registry>>>,
+    Path(name): Path<String>,
+) -> (StatusCode, Json<Value>) {
+    let registry = registry.0.lock().await;
+    match registry.get_queue(&name) {
+        None => (StatusCode::NOT_FOUND, Json::from(json!({"error": "test"}))),
+        Some(queue) => {
+            let value = serde_json::to_value(queue).unwrap();
+            (StatusCode::OK, Json::from(value))
+        }
+    }
 }

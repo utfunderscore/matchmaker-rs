@@ -1,12 +1,14 @@
 use crate::queue_entry::QueueEntry;
 use crate::registry::Registry;
 use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Queue {
+    #[serde(skip_serializing, default)]
     entries: HashMap<Uuid, QueueEntry>,
-    matchmaker: String,
+    pub matchmaker: String,
 }
 
 impl Queue {

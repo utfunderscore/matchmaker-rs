@@ -1,7 +1,7 @@
 mod routes;
 
 use axum::Router;
-use axum::routing::post;
+use axum::routing::{get, post};
 use common::algo::flexible;
 use common::codec::Codec;
 use common::registry::Registry;
@@ -13,17 +13,17 @@ use tokio::sync::Mutex;
 async fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt::init();
 
-    let registry = Registry::new();
     let mut codec = Codec::new();
 
     codec.register_deserializer("flexible", flexible::DESERIALIZER);
 
-    let app_data = AppData { registry, codec };
+    let registry = Registry::new("./data", codec);
 
-    let app_data = Arc::new(Mutex::new(app_data));
+    let app_data = Arc::new(Mutex::new(registry));
 
     let app = Router::new()
-        .route("/api/v1/queue", post(routes::create_queue_route))
+        .route("/api/v1/queue", post(routes::create_queue_route).get(routes::get_queues_route))
+        .route("/api/v1/queue/{name}", get(routes::get_queue))
         .with_state(app_data);
 
     let listener = tokio::net::TcpListener::bind("[::]:8080").await?;
@@ -31,9 +31,4 @@ async fn main() -> Result<(), Box<dyn Error>> {
     axum::serve(listener, app).await?;
 
     Ok(())
-}
-
-struct AppData {
-    registry: Registry,
-    codec: Codec,
 }

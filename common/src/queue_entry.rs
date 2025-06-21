@@ -1,7 +1,8 @@
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use uuid::Uuid;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct QueueEntry {
     pub id: Uuid,
     pub entries: Vec<Uuid>,
