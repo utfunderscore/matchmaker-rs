@@ -83,7 +83,7 @@ impl Matchmaker for FlexibleMatchMaker {
         Ok(results)
     }
 
-    fn validate_entry(&self, entry: &QueueEntry) -> Result<(), String> {
+    fn is_valid_entry(&self, entry: &QueueEntry) -> Result<(), String> {
         if entry.entries.len() < self.min_entry_size as usize {
             return Err(format!(
                 "Entry size {} is less than minimum required size {}",

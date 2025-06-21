@@ -19,16 +19,19 @@ impl Queue {
         }
     }
 
-    pub fn add_entry(&mut self, entry: QueueEntry) -> Result<(), String> {
+    pub fn add_entry(&mut self, entry: QueueEntry, registry: Registry) -> Result<(), String> {
         if self.entries.contains_key(&entry.id) {
             return Err("Entry already exists in the queue".to_string());
         }
-        
-        
+        let matchmaker = registry.get_matchmaker(&self.matchmaker).ok_or("Matchmaker not found")?;
+        if let Err(e) = matchmaker.is_valid_entry(&entry) {
+            return Err(format!("Invalid entry: {}", e));
+        }
+
         self.entries.insert(entry.id, entry);
         Ok(())
     }
-    
+
     pub fn tick(&mut self, registry: &Registry) -> Result<Vec<Vec<Uuid>>, String> {
         let matchmaker = registry.get_matchmaker(&self.matchmaker).ok_or("")?;
 
