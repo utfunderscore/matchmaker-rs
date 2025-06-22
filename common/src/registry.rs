@@ -60,8 +60,8 @@ impl Registry {
         })
     }
 
-    pub fn get_queue(&self, name: &str) -> Option<&Queue> {
-        self.queues.get(&name.to_lowercase())
+    pub fn get_queue(&mut self, name: &str) -> Option<&mut Queue> {
+        self.queues.get_mut(&name.to_lowercase())
     }
 
     pub fn get_queues(&self) -> Vec<Queue> {

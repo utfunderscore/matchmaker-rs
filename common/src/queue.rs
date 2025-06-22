@@ -5,8 +5,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct Queue {
-    #[serde(skip_serializing, default)]
+pub struct Queue {    #[serde(skip_serializing, default)]
     entries: HashMap<Uuid, QueueEntry>,
     pub matchmaker: String,
 }
