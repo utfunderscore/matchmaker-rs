@@ -47,11 +47,11 @@ pub fn deserialize(json: Value) -> Result<Box<dyn Matchmaker + Send + Sync>, Box
         .get(&type_name)
         .ok_or(format!("Unknown matchmaker type: {}", type_name))?;
 
-    deserializer(
-        json.get("settings")
-            .ok_or("Missing 'settings' field in JSON")?
-            .clone(),
-    )
+    let settings = json
+        .get("settings")
+        .ok_or("Missing 'settings' field in JSON")?;
+    
+    deserializer(settings.to_owned())
 }
 
 pub fn get_deserializer(type_name: &str) -> Option<&Deserializer> {

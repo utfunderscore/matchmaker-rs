@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,20 +54,17 @@ impl Queue {
         todo!()
     }
     
-    pub fn save<P: AsRef<Path>>(&self, name: &str, path: P) -> Result<(), Box<dyn Error>> {
-        let file_path = path.as_ref().join(format!("{}.json", name));
-        let json = serde_json::to_string(&self.serialize()?)?;
-        Ok(fs::write(file_path, json)?)
+    pub fn update_matchmaker(
+        &mut self,
+        matchmaker: Box<dyn Matchmaker + Send + Sync>,
+    ) -> Result<(), Box<dyn Error>> {
+        self.matchmaker = matchmaker;
+
+
+        
+        Ok(())
     }
 
-    pub fn serialize(&self) -> Result<Value, Box<dyn Error>> {
-        matchmaker::serialize(self.matchmaker())
-    }
-
-    pub fn deserialize(json: Value) -> Result<Self, Box<dyn Error>> {
-        matchmaker::deserialize(json.clone()).map(Queue::new)
-    }
-    
     pub fn add_entry(&mut self, queue_entry: Entry) -> Result<(), Box<dyn Error>> {
         self.matchmaker.is_valid_entry(&Entry::new(vec![]))?;
 
@@ -82,8 +80,22 @@ impl Queue {
         Ok(())
     }
 
-    pub fn get_entries(&self) -> Vec<Entry> {
-        self.entries.values().cloned().collect()
+    pub fn save<P: AsRef<Path>>(&self, name: &str, path: P) -> Result<(), Box<dyn Error>> {
+        let file_path = path.as_ref().join(format!("{}.json", name));
+        let json = serde_json::to_string(&self.serialize()?)?;
+        Ok(fs::write(file_path, json)?)
+    }
+
+    pub fn serialize(&self) -> Result<Value, Box<dyn Error>> {
+        matchmaker::serialize(self.matchmaker())
+    }
+
+    pub fn deserialize(json: Value) -> Result<Self, Box<dyn Error>> {
+        matchmaker::deserialize(json.clone()).map(Queue::new)
+    }
+
+    pub fn get_entries(&self) -> &HashMap<Uuid, Entry> {
+        &self.entries
     }
 
     pub fn matchmaker(&self) -> &Box<dyn Matchmaker + Send + Sync> {

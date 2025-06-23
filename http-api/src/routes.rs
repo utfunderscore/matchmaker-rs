@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use common::queue::{Queue};
+use common::queue::{Entry, Queue};
 
 #[derive(Serialize, Deserialize)]
 pub struct CreateQueueRequest {
@@ -23,7 +23,7 @@ pub async fn create_queue_route(
     registry: State<Arc<Mutex<QueueTracker>>>,
     request: Json<CreateQueueRequest>,
 ) -> (StatusCode, Json<Value>) {
-    match create_queue(registry.0.clone(), request.0).await {
+    match create_queue(registry.0, request.0).await {
         Ok(_) => (StatusCode::CREATED, Json(json!({"status": "Queue created successfully"}))),
         Err(e) => (StatusCode::BAD_REQUEST, Json(Value::String(e.to_string()))),
     }
@@ -34,6 +34,10 @@ pub async fn create_queue(
     request: CreateQueueRequest,
 ) -> Result<(), Box<dyn Error>> {
     let mut registry = registry.lock().await;
+
+    if registry.get_queue(&request.name).is_some() {
+        return Err(format!("Queue '{}' already exists", request.name).into());
+    }
 
     registry.create_queue(
         request.name,
@@ -47,15 +51,18 @@ pub async fn create_queue(
 #[axum::debug_handler]
 pub async fn get_queues_route(
     registry: State<Arc<Mutex<QueueTracker>>>,
-) -> (StatusCode, Json<Vec<QueueData>>) {
+) -> (StatusCode, Json<Vec<Value>>) {
     let tracker = registry.lock().await;
 
     let queues: &HashMap<String, Queue> = tracker.get_queues();
-    let queue_data: Vec<QueueData> = queues.iter().map(|(name, queue)| {
-        QueueData {
-            name: name.clone(),
-            entries: queue.get_entries(), // Assuming get_entries() returns Vec<QueueEntry>
-        }
+
+    let queue_data: Vec<Value> = queues.iter().map(|(name, queue)| {
+        let entries: Vec<&Entry> = queue.get_entries().values().collect();
+
+        json!({
+            "entries": entries,
+            "name": name,
+        })
     }).collect();
 
     (StatusCode::OK, Json(queue_data))

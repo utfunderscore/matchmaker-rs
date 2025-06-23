@@ -40,7 +40,7 @@ impl QueueTracker {
 
         Ok(QueueTracker {
             directory: path,
-            queues: HashMap::new(),
+            queues,
         })
     }
 

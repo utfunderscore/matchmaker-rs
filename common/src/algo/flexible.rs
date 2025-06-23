@@ -238,7 +238,7 @@ mod tests {
 
         assert!(result.is_err());
         let error = result.unwrap_err();
-        
+
         assert_eq!(error.to_string(), "Not enough players to form a match");
     }
 }
