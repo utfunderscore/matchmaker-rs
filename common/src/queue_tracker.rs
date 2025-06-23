@@ -31,9 +31,10 @@ impl QueueTracker {
             .ok_or(format!("Unknown matchmaker: {}", matchmaker))?;
         let matchmaker: Box<dyn Matchmaker + Send + Sync> = deserializer(settings)
             .map_err(|e| format!("Failed to deserialize matchmaker: {}", e))?;
-        let queue = Queue::new(matchmaker);
-
-        self.queues.insert(name, Box::new(queue));
+        let queue = Box::new(Queue::new(matchmaker));
+        
+        self.save(&name, &queue)?;
+        self.queues.insert(name, queue);
 
         Ok(())
     }
@@ -46,13 +47,13 @@ impl QueueTracker {
         &self.queues
     }
 
-    pub fn save(&self, name: &str, queue: Box<Queue>) -> Result<(), String> {
+    pub fn save(&self, name: &str, queue: &Queue) -> Result<(), String> {
         let queue_json = queue.serialize()?;
-        
+
         let file_path = self.directory.join(format!("{}.json", name));
         std::fs::write(&file_path, serde_json::to_string(&queue_json).map_err(|e| e.to_string())?)
             .map_err(|e| format!("Failed to write queue to file: {}", e))?;
-        
+
         Ok(())
     }
 }
