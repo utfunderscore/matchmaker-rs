@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use common::queue::QueueTrait;
+use common::queue::{Queue};
 
 #[derive(Serialize, Deserialize)]
 pub struct CreateQueueRequest {
@@ -49,7 +49,7 @@ pub async fn get_queues_route(
 ) -> (StatusCode, Json<Vec<QueueData>>) {
     let tracker = registry.lock().await;
     
-    let queues: &HashMap<String, Box<dyn QueueTrait>> = tracker.get_queues();
+    let queues: &HashMap<String, Box<Queue>> = tracker.get_queues();
     let queue_data: Vec<QueueData> = queues.iter().map(|(name, queue)| {
         QueueData {
             name: name.clone(),
