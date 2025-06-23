@@ -3,19 +3,20 @@ use crate::queue::Entry;
 use lazy_static::lazy_static;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::error::Error;
 use uuid::Uuid;
 
 pub trait Matchmaker: Send + Sync {
     fn get_type_name(&self) -> String;
-    fn matchmake(&self, entries: Vec<Entry>) -> Result<Vec<Vec<Uuid>>, String>;
+    fn matchmake(&self, entries: Vec<Entry>) -> Result<Vec<Vec<Uuid>>, Box<dyn Error>>;
 
-    fn is_valid_entry(&self, entry: &Entry) -> Result<(), String>;
+    fn is_valid_entry(&self, entry: &Entry) -> Result<(), Box<dyn Error>>;
 
-    fn serialize(&self) -> Result<Value, String>;
+    fn serialize(&self) -> Result<Value, Box<dyn Error>>;
 }
 
 pub type Deserializer =
-    Box<dyn Fn(Value) -> Result<Box<dyn Matchmaker + Send + Sync>, String> + Send + Sync>;
+    Box<dyn Fn(Value) -> Result<Box<dyn Matchmaker + Send + Sync>, Box<dyn Error>> + Send + Sync>;
 
 lazy_static! {
     pub static ref DESERIALIZERS: HashMap<String, Deserializer> = {
@@ -26,7 +27,7 @@ lazy_static! {
     };
 }
 
-pub fn serialize(matchmaker: &Box<dyn Matchmaker + Send + Sync>) -> Result<Value, String> {
+pub fn serialize(matchmaker: &Box<dyn Matchmaker + Send + Sync>) -> Result<Value, Box<dyn Error>> {
     let json = serde_json::json!({
         "type": matchmaker.get_type_name(),
         "settings": matchmaker.serialize()?,
@@ -35,7 +36,7 @@ pub fn serialize(matchmaker: &Box<dyn Matchmaker + Send + Sync>) -> Result<Value
     Ok(json)
 }
 
-pub fn deserialize(json: Value) -> Result<Box<dyn Matchmaker + Send + Sync>, String> {
+pub fn deserialize(json: Value) -> Result<Box<dyn Matchmaker + Send + Sync>, Box<dyn Error>> {
     let type_name = json
         .get("type")
         .and_then(Value::as_str)

@@ -3,6 +3,8 @@ use crate::matchmaker::Matchmaker;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::error::Error;
+use std::fs;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
@@ -41,8 +43,8 @@ impl Queue {
         }
     }
 
-    pub fn from(value: PathBuf) -> Result<Self, String> {
-        let json = std::fs::read_to_string(value).expect("Failed to read queue file");
+    pub fn from(value: PathBuf) -> Result<Self, Box<dyn Error>> {
+        let json = fs::read_to_string(value).expect("Failed to read queue file");
         let json_value: Value = serde_json::from_str(&json).expect("Failed to parse JSON");
         Queue::deserialize(json_value)
     }
@@ -51,21 +53,21 @@ impl Queue {
         todo!()
     }
     
-    pub fn save<P: AsRef<Path>>(&self, name: &str, path: P) -> Result<(), String> {
+    pub fn save<P: AsRef<Path>>(&self, name: &str, path: P) -> Result<(), Box<dyn Error>> {
         let file_path = path.as_ref().join(format!("{}.json", name));
-        let json = serde_json::to_string(&self.serialize()?).map_err(|e| e.to_string())?;
-        std::fs::write(file_path, json).map_err(|e| e.to_string())
+        let json = serde_json::to_string(&self.serialize()?)?;
+        Ok(fs::write(file_path, json)?)
     }
 
-    pub fn serialize(&self) -> Result<Value, String> {
+    pub fn serialize(&self) -> Result<Value, Box<dyn Error>> {
         matchmaker::serialize(self.matchmaker())
     }
 
-    pub fn deserialize(json: Value) -> Result<Self, String> {
+    pub fn deserialize(json: Value) -> Result<Self, Box<dyn Error>> {
         matchmaker::deserialize(json.clone()).map(Queue::new)
     }
     
-    pub fn add_entry(&mut self, queue_entry: Entry) -> Result<(), String> {
+    pub fn add_entry(&mut self, queue_entry: Entry) -> Result<(), Box<dyn Error>> {
         self.matchmaker.is_valid_entry(&Entry::new(vec![]))?;
 
         self.entries.insert(queue_entry.id(), queue_entry);
@@ -73,9 +75,9 @@ impl Queue {
         Ok(())
     }
 
-    pub fn remove_entry(&mut self, entry_id: Uuid) -> Result<(), String> {
+    pub fn remove_entry(&mut self, entry_id: Uuid) -> Result<(), Box<dyn Error>> {
         if self.entries.remove(&entry_id).is_none() {
-            return Err(format!("Entry with ID {} not found", entry_id));
+            return Err(format!("Entry with ID {} not found", entry_id).into());
         }
         Ok(())
     }

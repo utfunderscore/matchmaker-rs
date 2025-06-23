@@ -1,8 +1,9 @@
 use crate::matchmaker::Matchmaker;
 use crate::queue::Entry;
 use serde::{Deserialize, Serialize};
-use serde_json::{Error, Value};
+use serde_json::{Value};
 use std::collections::{HashMap, VecDeque};
+use std::error::Error;
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -21,7 +22,7 @@ impl FlexibleMatchMaker {
         min_entry_size: i16,
         max_entry_size: i16,
         num_teams: i16,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, Box<dyn Error>> {
         let valid_team_compositions = find_unique_addends(target_team_size)?;
 
         Ok(FlexibleMatchMaker {
@@ -35,12 +36,10 @@ impl FlexibleMatchMaker {
 }
 
 impl FlexibleMatchMaker {
-    pub fn deserialize(value: Value) -> Result<Box<dyn Matchmaker + Send + Sync>, String> {
-        let mut matchmaker: FlexibleMatchMaker = serde_json::from_value(value)
-            .map_err(|e: Error| format!("Failed to deserialize FlexibleMatchMaker: {}", e))?;
+    pub fn deserialize(value: Value) -> Result<Box<dyn Matchmaker + Send + Sync>, Box<dyn Error>> {
+        let mut matchmaker: FlexibleMatchMaker = serde_json::from_value(value)?;
 
-        matchmaker.valid_team_compositions = find_unique_addends(matchmaker.target_team_size)
-            .map_err(|e| format!("Failed to find valid team compositions: {}", e))?;
+        matchmaker.valid_team_compositions = find_unique_addends(matchmaker.target_team_size)?;
 
         Ok(Box::new(matchmaker))
     }
@@ -50,11 +49,11 @@ impl Matchmaker for FlexibleMatchMaker {
         "flexible".to_string()
     }
 
-    fn matchmake(&self, teams: Vec<Entry>) -> Result<Vec<Vec<Uuid>>, String> {
+    fn matchmake(&self, teams: Vec<Entry>) -> Result<Vec<Vec<Uuid>>, Box<dyn Error>> {
         let total_players: usize = teams.iter().map(|team| team.entries.len()).sum();
 
         if (total_players as i32) < (self.target_team_size as i32) * (self.num_teams as i32) {
-            return Err("Not enough players to form a match".to_string());
+            return Err("Not enough players to form a match".into());
         }
 
         let mut teams_by_size = teams.iter().fold(HashMap::new(), |mut acc, team| {
@@ -74,7 +73,7 @@ impl Matchmaker for FlexibleMatchMaker {
 
             let sizes = match composition {
                 Some(c) => c,
-                None => return Err("No valid team composition found".to_string()),
+                None => return Err("No valid team composition found".into()),
             };
 
             let mut picked: Vec<Uuid> = Vec::with_capacity(sizes.len());
@@ -90,13 +89,13 @@ impl Matchmaker for FlexibleMatchMaker {
         Ok(results)
     }
 
-    fn is_valid_entry(&self, entry: &Entry) -> Result<(), String> {
+    fn is_valid_entry(&self, entry: &Entry) -> Result<(), Box<dyn Error>> {
         if entry.entries.len() < self.min_entry_size as usize {
             return Err(format!(
                 "Entry size {} is less than minimum required size {}",
                 entry.entries.len(),
                 self.min_entry_size
-            ));
+            ).into());
         }
 
         if entry.entries.len() > self.max_entry_size as usize {
@@ -104,14 +103,14 @@ impl Matchmaker for FlexibleMatchMaker {
                 "Entry size {} exceeds maximum allowed size {}",
                 entry.entries.len(),
                 self.max_entry_size
-            ));
+            ).into());
         }
 
         Ok(())
     }
 
-    fn serialize(&self) -> Result<Value, String> {
-        serde_json::to_value(self).map_err(|e| e.to_string())
+    fn serialize(&self) -> Result<Value, Box<dyn Error>> {
+        Ok(serde_json::to_value(self)?)
     }
 }
 
@@ -235,9 +234,11 @@ mod tests {
         let team1 = Entry::new(vec![Uuid::new_v4()]);
         let teams = vec![team1];
 
-        let result = matchmaker.matchmake(teams);
+        let result: Result<Vec<Vec<Uuid>>, Box<dyn Error>> = matchmaker.matchmake(teams);
 
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Not enough players to form a match");
+        let error = result.unwrap_err();
+        
+        assert_eq!(error.to_string(), "Not enough players to form a match");
     }
 }

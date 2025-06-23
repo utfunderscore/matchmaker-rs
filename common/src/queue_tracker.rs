@@ -49,15 +49,14 @@ impl QueueTracker {
         name: String,
         matchmaker: String,
         settings: Value,
-    ) -> Result<(), String> {
+    ) -> Result<(), Box<dyn Error>> {
         let deserializer: &Deserializer = matchmaker::get_deserializer(&matchmaker)
             .ok_or(format!("Unknown matchmaker: {}", matchmaker))?;
-        let matchmaker: Box<dyn Matchmaker + Send + Sync> = deserializer(settings)
-            .map_err(|e| format!("Failed to deserialize matchmaker: {}", e))?;
+        let matchmaker: Box<dyn Matchmaker + Send + Sync> = deserializer(settings)?;
         let queue = Queue::new(matchmaker);
 
         
-        queue.save(&name, &self.directory).map_err(|e| format!("Failed to save queue: {}", e))?;
+        queue.save(&name, &self.directory)?;
         self.queues.insert(name, queue);
 
         Ok(())
