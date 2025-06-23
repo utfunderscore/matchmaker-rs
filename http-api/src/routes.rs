@@ -49,7 +49,7 @@ pub async fn get_queues_route(
 ) -> (StatusCode, Json<Vec<QueueData>>) {
     let tracker = registry.lock().await;
     
-    let queues: &HashMap<String, Box<Queue>> = tracker.get_queues();
+    let queues: &HashMap<String, Queue> = tracker.get_queues();
     let queue_data: Vec<QueueData> = queues.iter().map(|(name, queue)| {
         QueueData {
             name: name.clone(),

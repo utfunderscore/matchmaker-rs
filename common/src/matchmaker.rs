@@ -26,12 +26,12 @@ lazy_static! {
     };
 }
 
-pub fn serialize(matchmaker: Box<dyn Matchmaker>) -> Result<Value, String> {
+pub fn serialize(matchmaker: &Box<dyn Matchmaker + Send + Sync>) -> Result<Value, String> {
     let json = serde_json::json!({
         "type": matchmaker.get_type_name(),
         "settings": matchmaker.serialize()?,
     });
-    
+
     Ok(json)
 }
 
@@ -46,7 +46,11 @@ pub fn deserialize(json: Value) -> Result<Box<dyn Matchmaker + Send + Sync>, Str
         .get(&type_name)
         .ok_or(format!("Unknown matchmaker type: {}", type_name))?;
 
-    deserializer(json.get("settings").ok_or("Missing 'settings' field in JSON")?.clone())
+    deserializer(
+        json.get("settings")
+            .ok_or("Missing 'settings' field in JSON")?
+            .clone(),
+    )
 }
 
 pub fn get_deserializer(type_name: &str) -> Option<&Deserializer> {
