@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use uuid::Uuid;
+use crate::matchmaker;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entry {
@@ -46,6 +47,7 @@ where
             matchmaker,
         }
     }
+
 }
 
 impl<T> QueueTrait for Queue<T>
@@ -65,13 +67,15 @@ where
     }
 
     fn serialize(&self) -> Result<Value, String> {
-        let entries: Vec<Value> = self.entries.values().map(|e| {
-            serde_json::to_value(e).expect("Failed to serialize entry")
-        }).collect();
+        let entries_json = serde_json::to_value(&self.entries).map_err(|e| e.to_string())?;
+        let matchmaker_json = self.matchmaker.serialize()?;
 
-        Ok(Value::Array(entries))
+        let mut result = serde_json::Map::new();
+        result.insert("entries".to_string(), entries_json);
+        result.insert("matchmaker".to_string(), matchmaker_json);
+        Ok(Value::Object(result))
     }
-    
+
 
     fn remove_entry(&mut self, entry_id: Uuid) -> Result<(), String> {
         if self.entries.remove(&entry_id).is_none() {

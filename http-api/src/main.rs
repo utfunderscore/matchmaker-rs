@@ -13,7 +13,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt::init();
 
 
-    let queue_tracker = Arc::new(Mutex::new(QueueTracker::new()));
+    let queue_tracker = Arc::new(Mutex::new(QueueTracker::new("./queues")));
 
     let app = Router::new()
         .route("/api/v1/queue", post(routes::create_queue_route).get(routes::get_queues_route))
