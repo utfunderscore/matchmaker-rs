@@ -1,12 +1,14 @@
+use std::collections::HashMap;
+use crate::data::QueueData;
+use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::Json;
-use common::queue::Queue;
-use common::registry::Registry;
+use common::queue_tracker::QueueTracker;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use common::queue::QueueTrait;
 
 #[derive(Serialize, Deserialize)]
 pub struct CreateQueueRequest {
@@ -17,48 +19,64 @@ pub struct CreateQueueRequest {
 
 #[axum::debug_handler]
 pub async fn create_queue_route(
-    registry: State<Arc<Mutex<Registry>>>,
+    registry: State<Arc<Mutex<QueueTracker>>>,
     request: Json<CreateQueueRequest>,
 ) -> (StatusCode, Json<Value>) {
-    match create_queue(registry.0, request.0).await {
-        Ok(_) => (
-            StatusCode::CREATED,
-            Json::from(json!({"message": "Queue created successfully"})),
-        ),
-        Err(e) => (StatusCode::BAD_REQUEST, Json::from(json!({"error": e}))),
+    match create_queue(registry.0.clone(), request.0).await {
+        Ok(_) => (StatusCode::CREATED, Json(json!({"status": "Queue created successfully"}))),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(Value::String(e))),
     }
 }
 
 pub async fn create_queue(
-    registry: Arc<Mutex<Registry>>,
+    registry: Arc<Mutex<QueueTracker>>,
     request: CreateQueueRequest,
 ) -> Result<(), String> {
     let mut registry = registry.lock().await;
-
-    // Create and register the queue
-    registry.register_queue(&request.name, &request.matchmaker, request.settings)?;
-
+    
+    registry.create_queue(
+        request.name,
+        request.matchmaker,
+        request.settings,
+    )?;
+    
     Ok(())
 }
 
 #[axum::debug_handler]
 pub async fn get_queues_route(
-    registry: State<Arc<Mutex<Registry>>>,
-) -> (StatusCode, Json<Vec<Queue>>) {
-    let registry = registry.0.lock().await;
-    (StatusCode::OK, Json::from(registry.get_queues()))
+    registry: State<Arc<Mutex<QueueTracker>>>,
+) -> (StatusCode, Json<Vec<QueueData>>) {
+    let tracker = registry.lock().await;
+    
+    let queues: &HashMap<String, Box<dyn QueueTrait>> = tracker.get_queues();
+    let queue_data: Vec<QueueData> = queues.iter().map(|(name, queue)| {
+        QueueData {
+            name: name.clone(),
+            entries: queue.get_entries(), // Assuming get_entries() returns Vec<QueueEntry>
+        }
+    }).collect();
+    
+    (StatusCode::OK, Json(queue_data))
 }
 #[axum::debug_handler]
 pub async fn get_queue(
-    registry: State<Arc<Mutex<Registry>>>,
+    registry: State<Arc<Mutex<QueueTracker>>>,
     Path(name): Path<String>,
 ) -> (StatusCode, Json<Value>) {
-    let registry = registry.0.lock().await;
-    match registry.get_queue(&name) {
-        None => (StatusCode::NOT_FOUND, Json::from(json!({"error": "test"}))),
-        Some(queue) => {
-            let value = serde_json::to_value(queue).unwrap();
-            (StatusCode::OK, Json::from(value))
-        }
+    let registry = registry.lock().await;
+    
+    let queue = registry.get_queue(&name);
+    
+    match queue {
+        Some(q) => {
+            let entries = q.get_entries(); // Assuming get_entries() returns Vec<QueueEntry>
+            let response = json!({
+                "name": name,
+                "entries": entries,
+            });
+            (StatusCode::OK, Json(response))
+        },
+        None => (StatusCode::NOT_FOUND, Json(Value::String(format!("Queue '{}' not found", name)))),
     }
 }

@@ -1,8 +1,7 @@
-use crate::codec::MatchmakerDeserializer;
 use crate::matchmaker::Matchmaker;
-use crate::queue_entry::QueueEntry;
+use crate::queue::Entry;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Error, Value};
 use std::collections::{HashMap, VecDeque};
 use uuid::Uuid;
 
@@ -35,15 +34,23 @@ impl FlexibleMatchMaker {
     }
 }
 
-pub static DESERIALIZER: MatchmakerDeserializer = |settings: Value| {
-    let mut matchmaker = serde_json::from_value::<FlexibleMatchMaker>(settings)
-        .map_err(|e| format!("Error parsing matchmaker settings: {}", e))?;
-    matchmaker.valid_team_compositions = find_unique_addends(matchmaker.target_team_size)?;
-    Ok(Box::new(matchmaker))
-};
+impl FlexibleMatchMaker {
+    pub fn deserialize(value: Value) -> Result<Box<dyn Matchmaker + Send + Sync>, String> {
+        let mut matchmaker: FlexibleMatchMaker = serde_json::from_value(value)
+            .map_err(|e: Error| format!("Failed to deserialize FlexibleMatchMaker: {}", e))?;
 
+        matchmaker.valid_team_compositions = find_unique_addends(matchmaker.target_team_size)
+            .map_err(|e| format!("Failed to find valid team compositions: {}", e))?;
+
+        Ok(Box::new(matchmaker))
+    }
+}
 impl Matchmaker for FlexibleMatchMaker {
-    fn matchmake(&self, teams: Vec<QueueEntry>) -> Result<Vec<Vec<Uuid>>, String> {
+    fn get_type_name(&self) -> String {
+        todo!()
+    }
+
+    fn matchmake(&self, teams: Vec<Entry>) -> Result<Vec<Vec<Uuid>>, String> {
         let total_players: usize = teams.iter().map(|team| team.entries.len()).sum();
 
         if (total_players as i32) < (self.target_team_size as i32) * (self.num_teams as i32) {
@@ -52,7 +59,7 @@ impl Matchmaker for FlexibleMatchMaker {
 
         let mut teams_by_size = teams.iter().fold(HashMap::new(), |mut acc, team| {
             let size = team.entries.len() as i16;
-            acc.entry(size).or_insert_with(Vec::new).push(team.id);
+            acc.entry(size).or_insert_with(Vec::new).push(team.id());
             acc
         });
 
@@ -83,7 +90,7 @@ impl Matchmaker for FlexibleMatchMaker {
         Ok(results)
     }
 
-    fn is_valid_entry(&self, entry: &QueueEntry) -> Result<(), String> {
+    fn is_valid_entry(&self, entry: &Entry) -> Result<(), String> {
         if entry.entries.len() < self.min_entry_size as usize {
             return Err(format!(
                 "Entry size {} is less than minimum required size {}",
@@ -104,8 +111,7 @@ impl Matchmaker for FlexibleMatchMaker {
     }
 
     fn serialize(&self) -> Result<Value, String> {
-        serde_json::to_value(self)
-            .map_err(|e| format!("Error serializing matchmaker settings: {}", e))
+        serde_json::to_value(self).map_err(|e| e.to_string())
     }
 }
 
@@ -164,7 +170,6 @@ pub fn find_unique_addends(target: i16) -> Result<Vec<Vec<i16>>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::Map;
 
     #[test]
     fn test_find_unique_addends() {
@@ -213,8 +218,8 @@ mod tests {
     fn test_matchmake_success() {
         let matchmaker = FlexibleMatchMaker::new(1, 1, 1, 2).unwrap();
 
-        let team1 = QueueEntry::new(vec![Uuid::new_v4()], Map::new());
-        let team2 = QueueEntry::new(vec![Uuid::new_v4()], Map::new());
+        let team1 = Entry::new(vec![Uuid::new_v4()]);
+        let team2 = Entry::new(vec![Uuid::new_v4()]);
 
         let teams = vec![team1, team2];
 
@@ -227,7 +232,7 @@ mod tests {
     fn test_matchmake_not_enough_players() {
         let matchmaker = FlexibleMatchMaker::new(5, 1, 5, 2).unwrap();
 
-        let team1 = QueueEntry::new(vec![Uuid::new_v4()], Map::new());
+        let team1 = Entry::new(vec![Uuid::new_v4()]);
         let teams = vec![team1];
 
         let result = matchmaker.matchmake(teams);
