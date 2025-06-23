@@ -1,13 +1,13 @@
 use crate::matchmaker;
 use crate::matchmaker::{Deserializer, Matchmaker};
-use crate::queue::{Queue, QueueTrait};
+use crate::queue::{Queue};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub struct QueueTracker {
     directory: PathBuf,
-    queues: HashMap<String, Box<dyn QueueTrait>>,
+    queues: HashMap<String, Box<Queue>>,
 }
 
 impl QueueTracker {
@@ -38,20 +38,20 @@ impl QueueTracker {
         Ok(())
     }
 
-    pub fn get_queue(&self, name: &str) -> Option<&dyn QueueTrait> {
+    pub fn get_queue(&self, name: &str) -> Option<&Queue> {
         self.queues.get(name).map(|v| &**v)
     }
 
-    pub fn get_queues(&self) -> &HashMap<String, Box<dyn QueueTrait>> {
+    pub fn get_queues(&self) -> &HashMap<String, Box<Queue>> {
         &self.queues
     }
 
-    pub fn save(&self, name: &str, queue: Box<dyn QueueTrait>) -> Result<(), String> {
+    pub fn save(&self, name: &str, queue: Box<Queue>) -> Result<(), String> {
         let queue_json = queue.serialize()?;
-        let file_path = self.directory.join(format!("{}.json", name));
         
+        let file_path = self.directory.join(format!("{}.json", name));
         std::fs::write(&file_path, serde_json::to_string(&queue_json).map_err(|e| e.to_string())?)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("Failed to write queue to file: {}", e))?;
         
         Ok(())
     }
