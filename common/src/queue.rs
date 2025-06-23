@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use uuid::Uuid;
-use crate::matchmaker;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entry {
@@ -28,37 +27,24 @@ impl Entry {
     }
 }
 
-#[derive(Debug)]
-pub struct Queue<T>
-where
-    T: Matchmaker + ?Sized + Send + Sync,
-{
+pub struct Queue {
     entries: HashMap<Uuid, Entry>,
-    matchmaker: Box<T>,
+    matchmaker: Box<dyn Matchmaker + Send + Sync>,
 }
 
-impl<T> Queue<T>
-where
-    T: Matchmaker + ?Sized + Send + Sync,
-{
-    pub fn new(matchmaker: Box<T>) -> Self {
+impl Queue {
+    pub fn new(matchmaker: Box<dyn Matchmaker + Send + Sync>) -> Self {
         Queue {
             entries: HashMap::new(),
             matchmaker,
         }
     }
-
-}
-
-impl<T> QueueTrait for Queue<T>
-where
-    T: Matchmaker + ?Sized + Send + Sync,
-{
-    fn tick(&mut self) -> Result<(), String> {
+    
+    pub fn tick(&mut self) -> Result<(), String> {
         todo!()
     }
 
-    fn add_entry(&mut self, queue_entry: Entry) -> Result<(), String> {
+    pub fn add_entry(&mut self, queue_entry: Entry) -> Result<(), String> {
         self.matchmaker.is_valid_entry(&Entry::new(vec![]))?;
 
         self.entries.insert(queue_entry.id(), queue_entry);
@@ -66,7 +52,7 @@ where
         Ok(())
     }
 
-    fn serialize(&self) -> Result<Value, String> {
+    pub fn serialize(&self) -> Result<Value, String> {
         let entries_json = serde_json::to_value(&self.entries).map_err(|e| e.to_string())?;
         let matchmaker_json = self.matchmaker.serialize()?;
 
@@ -77,26 +63,14 @@ where
     }
 
 
-    fn remove_entry(&mut self, entry_id: Uuid) -> Result<(), String> {
+    pub fn remove_entry(&mut self, entry_id: Uuid) -> Result<(), String> {
         if self.entries.remove(&entry_id).is_none() {
             return Err(format!("Entry with ID {} not found", entry_id));
         }
         Ok(())
     }
 
-    fn get_entries(&self) -> Vec<Entry> {
+    pub fn get_entries(&self) -> Vec<Entry> {
         self.entries.values().cloned().collect()
     }
-}
-
-pub trait QueueTrait: Send + Sync {
-    fn tick(&mut self) -> Result<(), String>;
-
-    fn add_entry(&mut self, queue_entry: Entry) -> Result<(), String>;
-
-    fn serialize(&self) -> Result<Value, String>;
-
-    fn remove_entry(&mut self, entry_id: Uuid) -> Result<(), String>;
-
-    fn get_entries(&self) -> Vec<Entry>;
 }
