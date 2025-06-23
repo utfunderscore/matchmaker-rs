@@ -47,7 +47,7 @@ impl FlexibleMatchMaker {
 }
 impl Matchmaker for FlexibleMatchMaker {
     fn get_type_name(&self) -> String {
-        todo!()
+        "flexible".to_string()
     }
 
     fn matchmake(&self, teams: Vec<Entry>) -> Result<Vec<Vec<Uuid>>, String> {
