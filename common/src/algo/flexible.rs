@@ -49,16 +49,16 @@ impl Matchmaker for FlexibleMatchMaker {
         "flexible".to_string()
     }
 
-    fn matchmake(&self, teams: Vec<Entry>) -> Result<Vec<Vec<Uuid>>, Box<dyn Error>> {
-        let total_players: usize = teams.iter().map(|team| team.entries.len()).sum();
+    fn matchmake(&self, teams: Vec<&Entry>) -> Result<Vec<Vec<Uuid>>, Box<dyn Error>> {
+        let total_players: usize = teams.iter().map(|team| team.players.len()).sum();
 
         if (total_players as i32) < (self.target_team_size as i32) * (self.num_teams as i32) {
             return Err("Not enough players to form a match".into());
         }
 
-        let mut teams_by_size = teams.iter().fold(HashMap::new(), |mut acc, team| {
-            let size = team.entries.len() as i16;
-            acc.entry(size).or_insert_with(Vec::new).push(team.id());
+        let mut teams_by_size: HashMap<i16, Vec<Uuid>> = teams.iter().fold(HashMap::new(), |mut acc: HashMap<i16, Vec<Uuid>>, team| {
+            let size = team.players.len() as i16;
+            acc.entry(size).or_default().push(team.id());
             acc
         });
 
@@ -90,18 +90,18 @@ impl Matchmaker for FlexibleMatchMaker {
     }
 
     fn is_valid_entry(&self, entry: &Entry) -> Result<(), Box<dyn Error>> {
-        if entry.entries.len() < self.min_entry_size as usize {
+        if entry.players.len() < self.min_entry_size as usize {
             return Err(format!(
                 "Entry size {} is less than minimum required size {}",
-                entry.entries.len(),
+                entry.players.len(),
                 self.min_entry_size
             ).into());
         }
 
-        if entry.entries.len() > self.max_entry_size as usize {
+        if entry.players.len() > self.max_entry_size as usize {
             return Err(format!(
                 "Entry size {} exceeds maximum allowed size {}",
-                entry.entries.len(),
+                entry.players.len(),
                 self.max_entry_size
             ).into());
         }
@@ -220,7 +220,7 @@ mod tests {
         let team1 = Entry::new(vec![Uuid::new_v4()]);
         let team2 = Entry::new(vec![Uuid::new_v4()]);
 
-        let teams = vec![team1, team2];
+        let teams = vec![&team1, &team2];
 
         let result = matchmaker.matchmake(teams);
 
@@ -232,7 +232,7 @@ mod tests {
         let matchmaker = FlexibleMatchMaker::new(5, 1, 5, 2).unwrap();
 
         let team1 = Entry::new(vec![Uuid::new_v4()]);
-        let teams = vec![team1];
+        let teams = vec![&team1];
 
         let result: Result<Vec<Vec<Uuid>>, Box<dyn Error>> = matchmaker.matchmake(teams);
 

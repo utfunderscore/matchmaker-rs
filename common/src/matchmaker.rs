@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 pub trait Matchmaker: Send + Sync {
     fn get_type_name(&self) -> String;
-    fn matchmake(&self, entries: Vec<Entry>) -> Result<Vec<Vec<Uuid>>, Box<dyn Error>>;
+    fn matchmake(&self, entries: Vec<&Entry>) -> Result<Vec<Vec<Uuid>>, Box<dyn Error>>;
 
     fn is_valid_entry(&self, entry: &Entry) -> Result<(), Box<dyn Error>>;
 

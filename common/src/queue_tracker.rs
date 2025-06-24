@@ -6,10 +6,12 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{Arc};
+use tokio::sync::Mutex;
 
 pub struct QueueTracker {
     directory: PathBuf,
-    queues: HashMap<String, Queue>,
+    queues: HashMap<String, Arc<Mutex<Queue>>>,
 }
 
 impl QueueTracker {
@@ -22,7 +24,7 @@ impl QueueTracker {
             fs::create_dir_all(&path).expect("Failed to create directory for queue tracker");
         }
 
-        let mut queues: HashMap<String, Queue> = HashMap::new();
+        let mut queues: HashMap<String, Arc<Mutex<Queue>>> = HashMap::new();
         for entry in fs::read_dir(&path)? {
             let entry = entry?;
             let path = entry.path();
@@ -33,8 +35,8 @@ impl QueueTracker {
                     .ok_or("Invalid file name")?
                     .to_string();
 
-                let queue = Queue::from(path.clone())?;
-                queues.insert(queue_name, queue);
+                let queue = Queue::from(path)?;
+                queues.insert(queue_name, Arc::new(Mutex::new(queue)));
             }
         }
 
@@ -57,16 +59,16 @@ impl QueueTracker {
 
         
         queue.save(&name, &self.directory)?;
-        self.queues.insert(name, queue);
+        self.queues.insert(name, Arc::new(Mutex::new(queue)));
 
         Ok(())
     }
 
-    pub fn get_queue(&self, name: &str) -> Option<&Queue> {
-        self.queues.get(name)
+    pub fn get_queue(&self, name: &str) -> Option<Arc<Mutex<Queue>>> {
+        self.queues.get(name).cloned()
     }
 
-    pub fn get_queues(&self) -> &HashMap<String, Queue> {
+    pub fn get_queues(&self) -> &HashMap<String, Arc<Mutex<Queue>>> {
         &self.queues
     }
 }
