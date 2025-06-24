@@ -55,15 +55,16 @@ impl Queue {
         Ok(queue)
     }
 
-    pub async fn tick(&mut self) -> Result<(), Box<dyn Error>> {
+    pub async fn tick(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
+        println!("Ticking queue");
+        
         let entries: Vec<&Entry> = self.entries.values().collect();
 
         let result = self.matchmaker.matchmake(entries)?;
         for team in result {
-            
             for entry_id in &team {
                 let result = serde_json::to_value(&team)?;
-                
+
                 if let Err(e) = self.remove_entry(entry_id, Some(result)) {
                     println!("Failed to remove entry {} from queue: {}", entry_id, e);
                 }
@@ -73,25 +74,39 @@ impl Queue {
         Ok(())
     }
 
-    pub fn remove_entry(&mut self, entry_id: &Uuid, result: Option<Value>) -> Result<(), Box<dyn Error>> {
-        self.entries.remove(entry_id).ok_or(format!("Entry {} not found", entry_id))?;
-        let channel = self.pending_matches.remove(&entry_id).ok_or(format!("Entry {} not found", entry_id))?;
-        
+    pub fn remove_entry(
+        &mut self,
+        entry_id: &Uuid,
+        result: Option<Value>,
+    ) -> Result<(), Box<dyn Error>> {
+        self.entries
+            .remove(entry_id)
+            .ok_or(format!("Entry {} not found", entry_id))?;
+        let channel = self
+            .pending_matches
+            .remove(&entry_id)
+            .ok_or(format!("Entry {} not found", entry_id))?;
+
         if let Some(result) = result {
-            channel.send(Ok(result)).map_err(|_| format!("Failed to send leave message to {}", entry_id))?;
+            channel
+                .send(Ok(result))
+                .map_err(|_| format!("Failed to send leave message to {}", entry_id))?;
         }
-        
+
         Ok(())
     }
-    
-    pub fn join_queue(&mut self, entry: Entry) -> Receiver<Result<Value, Box<dyn Error + Send + Sync>>> {
+
+    pub fn join_queue(
+        &mut self,
+        entry: Entry,
+    ) -> Receiver<Result<Value, Box<dyn Error + Send + Sync>>> {
         println!("Joining queue");
         let (sender, receiver) = oneshot::channel();
         self.pending_matches.insert(entry.id(), sender);
         self.entries.insert(entry.id(), entry);
         receiver
     }
-    
+
     pub fn update_matchmaker(
         &mut self,
         matchmaker: Box<dyn Matchmaker + Send + Sync>,
@@ -129,6 +144,4 @@ impl Queue {
     pub fn matchmaker(&self) -> &Box<dyn Matchmaker + Send + Sync> {
         &self.matchmaker
     }
-
-
 }

@@ -8,6 +8,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc};
 use tokio::sync::Mutex;
+use tokio::time::{sleep, Duration};
 
 pub struct QueueTracker {
     directory: PathBuf,
@@ -40,10 +41,16 @@ impl QueueTracker {
             }
         }
 
-        Ok(QueueTracker {
+        let mut tracker = QueueTracker {
             directory: path,
-            queues,
-        })
+            queues: HashMap::new(),
+        };
+
+        for (name, queue) in queues {
+            tracker.register_queue(name, queue)?;
+        }
+        
+        Ok(tracker)
     }
 
     pub fn create_queue(
@@ -56,11 +63,42 @@ impl QueueTracker {
             .ok_or(format!("Unknown matchmaker: {}", matchmaker))?;
         let matchmaker: Box<dyn Matchmaker + Send + Sync> = deserializer(settings)?;
         let queue = Queue::new(matchmaker);
-
         
         queue.save(&name, &self.directory)?;
-        self.queues.insert(name, Arc::new(Mutex::new(queue)));
+        
+        let queue_mutex = Arc::new(Mutex::new(queue));
+        
+        self.register_queue(name, queue_mutex)?;
 
+        Ok(())
+    }
+    
+    pub fn register_queue(
+        &mut self,
+        name: String,
+        queue: Arc<Mutex<Queue>>,
+    ) -> Result<(), Box<dyn Error>> {
+        if self.queues.contains_key(&name) {
+            return Err(format!("Queue '{}' already exists", name).into());
+        }
+        let task_queue = Arc::clone(&queue);
+        
+        tokio::spawn(async move {
+            loop {
+                let mut queue = task_queue.lock().await;
+
+                let result = queue.tick().await;
+                if let Err(e) = result {
+                    eprintln!("Error ticking queue: {}", e);
+                }
+                drop(queue);
+
+                //sleep for 1 second
+                sleep(Duration::from_secs(1)).await;
+            }
+        });
+        
+        self.queues.insert(name, queue);
         Ok(())
     }
 
