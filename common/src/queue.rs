@@ -57,7 +57,7 @@ impl Queue {
 
     pub async fn tick(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
         println!("Ticking queue");
-        
+
         let entries: Vec<&Entry> = self.entries.values().collect();
 
         let result = self.matchmaker.matchmake(entries)?;

@@ -1,7 +1,7 @@
 use crate::matchmaker::Matchmaker;
 use crate::queue::Entry;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value};
+use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 use std::error::Error;
 use uuid::Uuid;
@@ -49,18 +49,24 @@ impl Matchmaker for FlexibleMatchMaker {
         "flexible".to_string()
     }
 
-    fn matchmake(&self, teams: Vec<&Entry>) -> Result<Vec<Vec<Uuid>>, Box<dyn Error + Send + Sync>> {
+    fn matchmake(
+        &self,
+        teams: Vec<&Entry>,
+    ) -> Result<Vec<Vec<Uuid>>, Box<dyn Error + Send + Sync>> {
         let total_players: usize = teams.iter().map(|team| team.players.len()).sum();
 
         if (total_players as i32) < (self.target_team_size as i32) * (self.num_teams as i32) {
             return Err("Not enough players to form a match".into());
         }
 
-        let mut teams_by_size: HashMap<i16, Vec<Uuid>> = teams.iter().fold(HashMap::new(), |mut acc: HashMap<i16, Vec<Uuid>>, team| {
-            let size = team.players.len() as i16;
-            acc.entry(size).or_default().push(team.id());
-            acc
-        });
+        let mut teams_by_size: HashMap<i16, Vec<Uuid>> =
+            teams
+                .iter()
+                .fold(HashMap::new(), |mut acc: HashMap<i16, Vec<Uuid>>, team| {
+                    let size = team.players.len() as i16;
+                    acc.entry(size).or_default().push(team.id());
+                    acc
+                });
 
         let mut results: Vec<Vec<Uuid>> = Vec::new();
 
@@ -95,7 +101,8 @@ impl Matchmaker for FlexibleMatchMaker {
                 "Entry size {} is less than minimum required size {}",
                 entry.players.len(),
                 self.min_entry_size
-            ).into());
+            )
+            .into());
         }
 
         if entry.players.len() > self.max_entry_size as usize {
@@ -103,7 +110,8 @@ impl Matchmaker for FlexibleMatchMaker {
                 "Entry size {} exceeds maximum allowed size {}",
                 entry.players.len(),
                 self.max_entry_size
-            ).into());
+            )
+            .into());
         }
 
         Ok(())
@@ -234,7 +242,8 @@ mod tests {
         let team1 = Entry::new(vec![Uuid::new_v4()]);
         let teams = vec![&team1];
 
-        let result: Result<Vec<Vec<Uuid>>, Box<dyn Error + Send + Sync>> = matchmaker.matchmake(teams);
+        let result: Result<Vec<Vec<Uuid>>, Box<dyn Error + Send + Sync>> =
+            matchmaker.matchmake(teams);
 
         assert!(result.is_err());
         let error = result.unwrap_err();

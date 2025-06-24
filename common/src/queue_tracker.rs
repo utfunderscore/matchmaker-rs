@@ -6,9 +6,9 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::{Arc};
+use std::sync::Arc;
 use tokio::sync::Mutex;
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, sleep};
 
 pub struct QueueTracker {
     directory: PathBuf,
@@ -49,7 +49,7 @@ impl QueueTracker {
         for (name, queue) in queues {
             tracker.register_queue(name, queue)?;
         }
-        
+
         Ok(tracker)
     }
 
@@ -63,16 +63,16 @@ impl QueueTracker {
             .ok_or(format!("Unknown matchmaker: {}", matchmaker))?;
         let matchmaker: Box<dyn Matchmaker + Send + Sync> = deserializer(settings)?;
         let queue = Queue::new(matchmaker);
-        
+
         queue.save(&name, &self.directory)?;
-        
+
         let queue_mutex = Arc::new(Mutex::new(queue));
-        
+
         self.register_queue(name, queue_mutex)?;
 
         Ok(())
     }
-    
+
     pub fn register_queue(
         &mut self,
         name: String,
@@ -82,7 +82,7 @@ impl QueueTracker {
             return Err(format!("Queue '{}' already exists", name).into());
         }
         let task_queue = Arc::clone(&queue);
-        
+
         tokio::spawn(async move {
             loop {
                 let mut queue = task_queue.lock().await;
@@ -97,7 +97,7 @@ impl QueueTracker {
                 sleep(Duration::from_secs(1)).await;
             }
         });
-        
+
         self.queues.insert(name, queue);
         Ok(())
     }

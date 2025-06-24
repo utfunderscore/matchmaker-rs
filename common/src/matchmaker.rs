@@ -8,7 +8,10 @@ use uuid::Uuid;
 
 pub trait Matchmaker: Send + Sync {
     fn get_type_name(&self) -> String;
-    fn matchmake(&self, entries: Vec<&Entry>) -> Result<Vec<Vec<Uuid>>, Box<dyn Error + Send + Sync>>;
+    fn matchmake(
+        &self,
+        entries: Vec<&Entry>,
+    ) -> Result<Vec<Vec<Uuid>>, Box<dyn Error + Send + Sync>>;
 
     fn is_valid_entry(&self, entry: &Entry) -> Result<(), Box<dyn Error>>;
 
@@ -50,7 +53,7 @@ pub fn deserialize(json: Value) -> Result<Box<dyn Matchmaker + Send + Sync>, Box
     let settings = json
         .get("settings")
         .ok_or("Missing 'settings' field in JSON")?;
-    
+
     deserializer(settings.to_owned())
 }
 

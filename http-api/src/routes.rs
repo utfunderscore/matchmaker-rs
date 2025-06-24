@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::error::Error;
-use std::sync::{Arc};
+use std::sync::Arc;
 use tokio::sync::{Mutex, MutexGuard};
 use uuid::Uuid;
 
@@ -83,12 +83,16 @@ pub async fn queue_join(
                     tokio::spawn(async move {
                         match join_fut.await {
                             Ok(Ok(response)) => {
-                                if let Err(err) = sender.send(Text(response.to_string().into())).await {
+                                if let Err(err) =
+                                    sender.send(Text(response.to_string().into())).await
+                                {
                                     eprintln!("Error sending join response: {}", err);
                                 }
                             }
                             _ => {
-                                if let Err(err) = sender.send(Text("Failed to join queue".into())).await {
+                                if let Err(err) =
+                                    sender.send(Text("Failed to join queue".into())).await
+                                {
                                     eprintln!("Error sending join error: {}", err);
                                 }
                             }
@@ -112,16 +116,14 @@ pub async fn get_queues_route(
 
     let queues: &HashMap<String, Arc<Mutex<Queue>>> = tracker.get_queues();
 
-    let futures = queues.iter().map(|(name, queue)| {
-        async move {
-            let queue: MutexGuard<Queue> = queue.lock().await;
-            let entries: Vec<&Entry> = queue.get_entries().values().collect();
+    let futures = queues.iter().map(|(name, queue)| async move {
+        let queue: MutexGuard<Queue> = queue.lock().await;
+        let entries: Vec<&Entry> = queue.get_entries().values().collect();
 
-            json!({
-                "name": name,
-                "entries": entries,
-            })
-        }
+        json!({
+            "name": name,
+            "entries": entries,
+        })
     });
 
     let queue_data: Vec<Value> = join_all(futures).await;
