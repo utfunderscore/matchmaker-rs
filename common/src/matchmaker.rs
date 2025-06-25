@@ -6,12 +6,50 @@ use std::collections::HashMap;
 use std::error::Error;
 use uuid::Uuid;
 
+pub enum MatchmakerResult {
+    Matched(Vec<Vec<Uuid>>),
+    Skip(String),
+    Error((String, Option<Vec<Uuid>>)),
+}
+
+impl MatchmakerResult {
+    
+    pub fn is_matched(&self) -> bool {
+        matches!(self, MatchmakerResult::Matched(_))
+    }
+    
+    pub fn is_skip(&self) -> bool {
+        matches!(self, MatchmakerResult::Skip(_))
+    }
+    
+    pub fn is_err(&self) -> bool {
+        matches!(self, MatchmakerResult::Error(_))
+    }
+    
+    pub fn unwrap_skip(&self) -> String {
+        if let MatchmakerResult::Skip(msg) = self {
+            msg.clone()
+        } else {
+            panic!("Called unwrap_skip on a non-skip result");
+        }
+    }
+    
+    pub fn unwarp_err(&self) -> (String, Option<Vec<Uuid>>) {
+        if let MatchmakerResult::Error(err) = self {
+            err.clone()
+        } else {
+            panic!("Called unwarp_err on a non-error result");
+        }
+    }
+    
+}
+
 pub trait Matchmaker: Send + Sync {
     fn get_type_name(&self) -> String;
     fn matchmake(
         &self,
         entries: Vec<&Entry>,
-    ) -> Result<Vec<Vec<Uuid>>, Box<dyn Error + Send + Sync>>;
+    ) -> MatchmakerResult;
 
     fn is_valid_entry(&self, entry: &Entry) -> Result<(), Box<dyn Error>>;
 

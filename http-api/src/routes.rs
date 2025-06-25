@@ -1,6 +1,6 @@
 use axum::Json;
 use axum::extract::ws::Message::Text;
-use axum::extract::ws::WebSocket;
+use axum::extract::ws::{Message, WebSocket};
 use axum::extract::{Path, State, WebSocketUpgrade};
 use axum::http::StatusCode;
 use axum::response::Response;
@@ -8,7 +8,7 @@ use common::queue::{Entry, Queue};
 use common::queue_tracker::QueueTracker;
 use futures_util::SinkExt;
 use futures_util::future::join_all;
-use futures_util::stream::StreamExt;
+use futures_util::stream::{SplitSink, SplitStream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -72,40 +72,72 @@ pub async fn queue_join(
     queue_tracker: State<Arc<Mutex<QueueTracker>>>,
     queue_name: String,
 ) {
-    let (mut sender, mut receiver) = socket.split();
+    let (sender, mut receiver): (SplitSink<WebSocket, Message>, SplitStream<WebSocket>) =
+        socket.split();
 
-    if let Some(Ok(Text(text))) = receiver.next().await {
-        match serde_json::from_str::<QueueJoinRequest>(&text) {
-            Ok(request) => {
-                let queue_tracker = queue_tracker.lock().await;
-                if let Some(queue) = queue_tracker.get_queue(&queue_name) {
-                    let join_fut = queue.lock().await.join_queue(Entry::new(request.players));
-                    tokio::spawn(async move {
-                        match join_fut.await {
-                            Ok(Ok(response)) => {
-                                if let Err(err) =
-                                    sender.send(Text(response.to_string().into())).await
-                                {
-                                    eprintln!("Error sending join response: {}", err);
-                                }
-                            }
-                            _ => {
-                                if let Err(err) =
-                                    sender.send(Text("Failed to join queue".into())).await
-                                {
-                                    eprintln!("Error sending join error: {}", err);
-                                }
-                            }
-                        }
-                    });
-                }
-            }
-            Err(err) => {
-                eprintln!("Error parsing join message: {}", err);
-                let _ = sender.send(Text(err.to_string().into())).await;
-            }
+    let sender_mutex: Arc<Mutex<SplitSink<WebSocket, Message>>> = Arc::new(Mutex::new(sender));
+
+    while let Some(Ok(Text(text))) = receiver.next().await {
+        let join_request: Result<QueueJoinRequest, _> = serde_json::from_str(&text);
+        if join_request.is_err() {
+            let mut sender = sender_mutex.lock().await;
+
+            let _ = &sender
+                .send(Text("Invalid join request format".into()))
+                .await;
+            continue;
         }
+        let _ = on_join_request(
+            &queue_name,
+            join_request.unwrap(),
+            queue_tracker.clone(),
+            sender_mutex.clone(),
+        )
+        .await;
     }
+}
+
+async fn on_join_request(
+    queue_name: &String,
+    join_request: QueueJoinRequest,
+    queue_tracker: State<Arc<Mutex<QueueTracker>>>,
+    sender: Arc<Mutex<SplitSink<WebSocket, Message>>>,
+) -> Result<(), Box<dyn Error>> {
+    let queue_tracker = queue_tracker.lock().await;
+    let queue = queue_tracker
+        .get_queue(queue_name)
+        .ok_or("Queue not found")?;
+
+    let mut queue = queue.lock().await;
+    let receiver = queue.join_queue(Entry::new(join_request.players));
+    tokio::spawn(async move {
+        let queue_result = receiver.await;
+        if queue_result.is_err() {
+            println!(
+                "Error waiting for queue result: {}",
+                queue_result.unwrap_err()
+            );
+            return;
+        }
+        let result = queue_result.unwrap();
+        let message = match result {
+            Ok(value) => serde_json::to_string(&value).unwrap_or_default(),
+            Err(err) => serde_json::to_string(&json!({
+                "error": err.to_string()
+            }))
+            .unwrap_or_default(),
+        };
+
+        sender
+            .lock()
+            .await
+            .send(Text(message.into()))
+            .await
+            .unwrap();
+    });
+
+    Ok(())
+    // queue tracker dropped
 }
 
 #[axum::debug_handler]
