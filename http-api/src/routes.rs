@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
 use tokio::sync::{Mutex, MutexGuard};
+use tracing::debug;
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize)]
@@ -78,6 +79,8 @@ pub async fn queue_join(
     let sender_mutex: Arc<Mutex<SplitSink<WebSocket, Message>>> = Arc::new(Mutex::new(sender));
 
     while let Some(Ok(Text(text))) = receiver.next().await {
+        debug!("Received join request: {}", text);
+        
         let join_request: Result<QueueJoinRequest, _> = serde_json::from_str(&text);
         if join_request.is_err() {
             let mut sender = sender_mutex.lock().await;

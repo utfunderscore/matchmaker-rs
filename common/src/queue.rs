@@ -1,7 +1,7 @@
 use crate::matchmaker;
 use crate::matchmaker::{Matchmaker, MatchmakerResult};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
@@ -15,6 +15,7 @@ use uuid::Uuid;
 pub struct Entry {
     id: Uuid,
     players: Vec<Uuid>,
+    metadata: Map<String, Value>
 }
 
 impl Entry {
@@ -22,6 +23,7 @@ impl Entry {
         Entry {
             id: Uuid::new_v4(),
             players,
+            metadata: Map::new(),
         }
     }
 
@@ -131,7 +133,7 @@ impl Queue {
         &mut self,
         entry: Entry,
     ) -> Receiver<Result<Value, Box<dyn Error + Send + Sync>>> {
-        debug!("Joining queue");
+        info!("Joining queue: {:?}", entry);
         let (sender, receiver) = oneshot::channel();
         self.pending_matches.insert(entry.id(), sender);
         self.entries.insert(entry.id(), entry);
