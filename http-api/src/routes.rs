@@ -78,6 +78,8 @@ pub async fn queue_join(
 
     let sender_mutex: Arc<Mutex<SplitSink<WebSocket, Message>>> = Arc::new(Mutex::new(sender));
 
+    let mut entry_ids: Vec<Uuid> = Vec::new();
+    
     while let Some(Ok(Text(text))) = receiver.next().await {
         debug!("Received join request: {}", text);
         
@@ -90,14 +92,31 @@ pub async fn queue_join(
                 .await;
             continue;
         }
-        let _ = on_join_request(
+        let id = on_join_request(
             &queue_name,
             join_request.unwrap(),
             queue_tracker.clone(),
             sender_mutex.clone(),
         )
         .await;
+        
+        if let Ok(id) = id {
+            entry_ids.push(id);
+        }
     }
+
+    for id in entry_ids {
+        let queue_tracker = queue_tracker.lock().await;
+        let queue = queue_tracker.get_queue(&queue_name);
+        if let Some(queue) = queue {
+            let mut queue = queue.lock().await;
+            let _ = queue.remove_entry(&id);
+        } else {
+            debug!("Queue '{}' not found for entry {}", queue_name, id);
+        }
+    }
+    
+    debug!("WebSocket connection closed for queue: {}", queue_name);
 }
 
 async fn on_join_request(
@@ -105,14 +124,17 @@ async fn on_join_request(
     join_request: QueueJoinRequest,
     queue_tracker: State<Arc<Mutex<QueueTracker>>>,
     sender: Arc<Mutex<SplitSink<WebSocket, Message>>>,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<Uuid, Box<dyn Error>> {
     let queue_tracker = queue_tracker.lock().await;
     let queue = queue_tracker
         .get_queue(queue_name)
         .ok_or("Queue not found")?;
 
     let mut queue = queue.lock().await;
-    let receiver = queue.join_queue(Entry::new(join_request.players));
+    let entry = Entry::new(join_request.players);
+    let entry_id = entry.id();
+    
+    let receiver = queue.join_queue(entry);
     tokio::spawn(async move {
         let queue_result = receiver.await;
         if queue_result.is_err() {
@@ -139,7 +161,7 @@ async fn on_join_request(
             .unwrap();
     });
 
-    Ok(())
+    Ok(entry_id)
     // queue tracker dropped
 }
 

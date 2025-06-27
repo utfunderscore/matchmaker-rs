@@ -85,10 +85,15 @@ impl QueueTracker {
 
         tokio::spawn(async move {
             loop {
-                sleep(Duration::from_secs(1)).await;
                 
                 let mut queue = task_queue.lock().await;
-                let _ = queue.tick().await;
+                let result = queue.tick().await;
+                
+                drop(queue);
+                
+                if !result {
+                    sleep(Duration::from_millis(50)).await;
+                }
             }
         });
 

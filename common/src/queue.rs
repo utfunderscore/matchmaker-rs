@@ -15,7 +15,7 @@ use uuid::Uuid;
 pub struct Entry {
     id: Uuid,
     players: Vec<Uuid>,
-    metadata: Map<String, Value>
+    metadata: Map<String, Value>,
 }
 
 impl Entry {
@@ -58,18 +58,16 @@ impl Queue {
         Ok(queue)
     }
 
-    pub async fn tick(&mut self) {
-        debug!("Ticking queue");
-
+    pub async fn tick(&mut self) -> bool {
         let entries: Vec<&Entry> = self.entries.values().collect();
 
         let result = self.matchmaker.matchmake(entries);
 
-        match result {
+        let success = match result {
             MatchmakerResult::Matched(teams) => {
                 info!("Matched teams: {:?}", teams);
                 for team_id in teams.iter().flatten() {
-                    let remove_result = self.remove_entry(
+                    let remove_result = self.leave_queue(
                         team_id,
                         Some(serde_json::to_value(&teams).unwrap_or_default()),
                     );
@@ -77,37 +75,42 @@ impl Queue {
                         error!("Failed to remove entry {}: {}", team_id, e);
                     }
                 }
+                true
             }
-            MatchmakerResult::Skip(_) => {}
-            MatchmakerResult::Error((err, affected)) => match affected {
-                None => {
-                    self.remove_all(Value::String(err));
-                    return;
-                }
-                Some(affected) => {
-                    for entry_id in affected {
-                        let remove_result =
-                            self.remove_entry(&entry_id, Some(Value::String(err.clone())));
-                        if let Err(e) = remove_result {
-                            error!("Failed to remove entry {}: {}", entry_id, e);
+            MatchmakerResult::Skip(_) => false,
+            MatchmakerResult::Error((err, affected)) => {
+                match affected {
+                    None => {
+                        self.remove_all(Value::String(err));
+                    }
+                    Some(affected) => {
+                        for entry_id in affected {
+                            let remove_result =
+                                self.leave_queue(&entry_id, Some(Value::String(err.clone())));
+                            if let Err(e) = remove_result {
+                                error!("Failed to remove entry {}: {}", entry_id, e);
+                            }
                         }
                     }
                 }
-            },
-        }
+                false
+            }
+        };
+
+        success
     }
 
     pub fn remove_all(&mut self, reason: Value) {
         warn!("Removing all entries from queue due to: {}", reason);
         let entry_ids: Vec<Uuid> = self.entries.keys().cloned().collect();
         for entry_id in entry_ids {
-            if let Err(e) = self.remove_entry(&entry_id, Some(reason.clone())) {
+            if let Err(e) = self.leave_queue(&entry_id, Some(reason.clone())) {
                 error!("Failed to remove entry {}: {}", entry_id, e);
             }
         }
     }
 
-    pub fn remove_entry(
+    pub fn leave_queue(
         &mut self,
         entry_id: &Uuid,
         result: Option<Value>,
@@ -127,6 +130,12 @@ impl Queue {
         }
 
         Ok(())
+    }
+
+    pub fn remove_entry(&mut self, entry_id: &Uuid) {
+        self.entries.remove(entry_id);
+        self.pending_matches.remove(entry_id);
+        debug!("Removed entry with ID: {}", entry_id);
     }
 
     pub fn join_queue(
