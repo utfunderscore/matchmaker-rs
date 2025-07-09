@@ -1,3 +1,4 @@
+use crate::matchmaker::MatchmakerResult::{Matched, Skip};
 use crate::matchmaker::{Matchmaker, MatchmakerResult};
 use crate::queue::Entry;
 use serde::{Deserialize, Serialize};
@@ -5,7 +6,6 @@ use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 use std::error::Error;
 use uuid::Uuid;
-use crate::matchmaker::MatchmakerResult::{Matched, Skip};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct FlexibleMatchMaker {
@@ -15,6 +15,9 @@ pub struct FlexibleMatchMaker {
     num_teams: i16,
     #[serde(skip)]
     valid_team_compositions: Vec<Vec<i16>>,
+    #[serde(skip)]
+    teams_by_size: Vec<Vec<Uuid>>, // the index of the first array is the team size
+    teams: HashMap<Uuid, Entry>,
 }
 
 impl FlexibleMatchMaker {
@@ -32,6 +35,8 @@ impl FlexibleMatchMaker {
             max_entry_size,
             num_teams,
             valid_team_compositions,
+            teams_by_size: Vec::new(),
+            teams: HashMap::new(),
         })
     }
 }
@@ -50,32 +55,22 @@ impl Matchmaker for FlexibleMatchMaker {
         "flexible".to_string()
     }
 
-    fn matchmake(
-        &self,
-        teams: Vec<&Entry>,
-    ) -> MatchmakerResult {
-        let total_players: usize = teams.iter().map(|team| team.entries().len()).sum();
+    fn matchmake(&self) -> MatchmakerResult {
+        let total_players: usize = self.teams_by_size.iter().map(|team| team.len()).sum();
 
         if (total_players as i32) < (self.target_team_size as i32) * (self.num_teams as i32) {
             return Skip("Not enough players to form a match".to_string());
         }
 
-        let mut teams_by_size: HashMap<i16, Vec<Uuid>> =
-            teams
-                .iter()
-                .fold(HashMap::new(), |mut acc: HashMap<i16, Vec<Uuid>>, team| {
-                    let size = team.entries().len() as i16;
-                    acc.entry(size).or_default().push(team.id());
-                    acc
-                });
-
         let mut results: Vec<Vec<Uuid>> = Vec::new();
 
         for _ in 0..self.num_teams {
             let composition = self.valid_team_compositions.iter().find(|sizes| {
-                sizes
-                    .iter()
-                    .all(|&sz| teams_by_size.get(&sz).map_or(false, |dq| !dq.is_empty()))
+                sizes.iter().all(|&sz| {
+                    self.teams_by_size
+                        .get(sz as usize)
+                        .map_or(false, |dq| !dq.is_empty())
+                })
             });
 
             let sizes = match composition {
@@ -83,11 +78,17 @@ impl Matchmaker for FlexibleMatchMaker {
                 None => return Skip("No valid team composition found".to_string()),
             };
 
+            let mut index_tracker: Vec<usize> = Vec::new();
+
             let mut picked: Vec<Uuid> = Vec::with_capacity(sizes.len());
             for &sz in sizes {
                 // unwrap is safe because we checked availability above
-                let queue = teams_by_size.get_mut(&sz).unwrap();
-                picked.push(queue.pop().unwrap());
+                let queue = self.teams_by_size.get(sz as usize).unwrap();
+                let index = index_tracker.get(sz as usize).unwrap_or(&0usize);
+
+                picked.push(queue.get(*index).unwrap().clone());
+
+                index_tracker.push(*index + 1);
             }
 
             results.push(picked);
@@ -96,7 +97,36 @@ impl Matchmaker for FlexibleMatchMaker {
         Matched(results)
     }
 
-    fn is_valid_entry(&self, entry: &Entry) -> Result<(), Box<dyn Error>> {
+    // fn is_valid_entry(&self, entry: &Entry) -> Result<(), Box<dyn Error>> {
+    //
+    //
+    //     Ok(())
+    // }
+
+    fn serialize(&self) -> Result<Value, Box<dyn Error>> {
+        Ok(serde_json::to_value(self)?)
+    }
+
+    fn remove_all(&mut self) {
+        self.teams.clear();
+        self.teams_by_size.clear();
+    }
+
+    fn get_entries(&self) -> Vec<&Entry> {
+        self.teams.values().collect()
+    }
+
+    fn remove_entry(&mut self, entry_id: &Uuid) -> Result<(), Box<dyn Error>> {
+        let entry = self.teams.get(entry_id).unwrap();
+        let size = entry.entries().len();
+
+        let teams = self.teams_by_size.get_mut(size).unwrap();
+        teams.retain(|id| id != entry_id);
+
+        Ok(())
+    }
+
+    fn add_entry(&mut self, entry: Entry) -> Result<(), Box<dyn Error>> {
         if entry.entries().len() < self.min_entry_size as usize {
             return Err(format!(
                 "Entry size {} is less than minimum required size {}",
@@ -115,11 +145,20 @@ impl Matchmaker for FlexibleMatchMaker {
             .into());
         }
 
-        Ok(())
-    }
+        let size = entry.entries().len();
 
-    fn serialize(&self) -> Result<Value, Box<dyn Error>> {
-        Ok(serde_json::to_value(self)?)
+        match self.teams_by_size.get_mut(size) {
+            None => {
+                self.teams_by_size.push(vec![entry.id()]);
+            }
+            Some(teams) => {
+                teams.push(entry.id());
+            }
+        }
+
+        self.teams.insert(entry.id(), entry);
+
+        Ok(())
     }
 }
 
@@ -177,8 +216,8 @@ pub fn find_unique_addends(target: i16) -> Result<Vec<Vec<i16>>, String> {
 
 #[cfg(test)]
 mod tests {
-    use tracing::debug;
     use super::*;
+    use tracing::debug;
 
     #[test]
     fn test_find_unique_addends() {
@@ -225,26 +264,28 @@ mod tests {
 
     #[test]
     fn test_matchmake_success() {
-        let matchmaker = FlexibleMatchMaker::new(1, 1, 1, 2).unwrap();
+        let mut matchmaker = FlexibleMatchMaker::new(1, 1, 1, 2).unwrap();
 
         let team1 = Entry::new(vec![Uuid::new_v4()]);
         let team2 = Entry::new(vec![Uuid::new_v4()]);
 
-        let teams = vec![&team1, &team2];
+        matchmaker.add_entry(team1).unwrap();
+        matchmaker.add_entry(team2).unwrap();
 
-        let result = matchmaker.matchmake(teams);
+        let result = matchmaker.matchmake();
 
         assert!(result.is_matched());
     }
 
     #[test]
     fn test_matchmake_not_enough_players() {
-        let matchmaker = FlexibleMatchMaker::new(5, 1, 5, 2).unwrap();
+        let mut matchmaker = FlexibleMatchMaker::new(5, 1, 5, 2).unwrap();
 
         let team1 = Entry::new(vec![Uuid::new_v4()]);
-        let teams = vec![&team1];
 
-        let result: MatchmakerResult = matchmaker.matchmake(teams);
+        matchmaker.add_entry(team1).unwrap();
+
+        let result: MatchmakerResult = matchmaker.matchmake();
 
         assert!(result.is_skip());
         let error = result.unwrap_skip();

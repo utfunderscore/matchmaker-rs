@@ -37,16 +37,14 @@ impl Entry {
 }
 
 pub struct Queue {
-    entries: HashMap<Uuid, Entry>,
     matchmaker: Box<dyn Matchmaker + Send + Sync>,
-    pending_matches: HashMap<Uuid, Sender<Result<Value, Box<dyn Error + Send + Sync>>>>,
+    senders: HashMap<Uuid, Sender<Value>>
 }
 impl Queue {
     pub fn new(matchmaker: Box<dyn Matchmaker + Send + Sync>) -> Self {
         Queue {
-            entries: HashMap::new(),
             matchmaker,
-            pending_matches: HashMap::new(),
+            senders: HashMap::new(),
         }
     }
 
@@ -54,14 +52,13 @@ impl Queue {
         let json = fs::read_to_string(value).expect("Failed to read queue file");
         let json_value: Value = serde_json::from_str(&json).expect("Failed to parse JSON");
         let mut queue = Queue::deserialize(json_value)?;
-        queue.pending_matches = HashMap::new();
+        queue.senders = HashMap::new();
         Ok(queue)
     }
 
     pub async fn tick(&mut self) -> bool {
-        let entries: Vec<&Entry> = self.entries.values().collect();
 
-        let result = self.matchmaker.matchmake(entries);
+        let result = self.matchmaker.matchmake();
 
         let success = match result {
             MatchmakerResult::Matched(teams) => {
@@ -69,7 +66,7 @@ impl Queue {
                 for team_id in teams.iter().flatten() {
                     let remove_result = self.leave_queue(
                         team_id,
-                        Some(serde_json::to_value(&teams).unwrap_or_default()),
+                        serde_json::to_value(&teams).unwrap_or_default(),
                     );
                     if let Err(e) = remove_result {
                         error!("Failed to remove entry {}: {}", team_id, e);
@@ -86,7 +83,7 @@ impl Queue {
                     Some(affected) => {
                         for entry_id in affected {
                             let remove_result =
-                                self.leave_queue(&entry_id, Some(Value::String(err.clone())));
+                                self.leave_queue(&entry_id, Value::String(err.clone()));
                             if let Err(e) = remove_result {
                                 error!("Failed to remove entry {}: {}", entry_id, e);
                             }
@@ -102,63 +99,52 @@ impl Queue {
 
     pub fn remove_all(&mut self, reason: Value) {
         warn!("Removing all entries from queue due to: {}", reason);
-        let entry_ids: Vec<Uuid> = self.entries.keys().cloned().collect();
-        for entry_id in entry_ids {
-            if let Err(e) = self.leave_queue(&entry_id, Some(reason.clone())) {
-                error!("Failed to remove entry {}: {}", entry_id, e);
-            }
-        }
+
+        //Drain senders and send the reason
+        self.senders.drain().for_each(|(_, sender)| {
+           let _ = sender.send(reason.clone()); 
+        });
+        
     }
 
     pub fn leave_queue(
         &mut self,
         entry_id: &Uuid,
-        result: Option<Value>,
+        result: Value,
     ) -> Result<(), Box<dyn Error>> {
-        self.entries
-            .remove(entry_id)
-            .ok_or(format!("Entry {} not found", entry_id))?;
-        let channel = self
-            .pending_matches
-            .remove(&entry_id)
-            .ok_or(format!("Entry {} not found", entry_id))?;
 
-        if let Some(result) = result {
-            channel
-                .send(Ok(result))
-                .map_err(|_| format!("Failed to send leave message to {}", entry_id))?;
+        self.matchmaker.remove_entry(entry_id)?;
+        let sender = self.senders.remove(entry_id);
+
+        match sender {
+            None => {}
+            Some(sender) => {
+                let _ = sender.send(result);
+            }
         }
 
         Ok(())
     }
 
-    pub fn remove_entry(&mut self, entry_id: &Uuid) {
-        self.entries.remove(entry_id);
-        self.pending_matches.remove(entry_id);
+    pub fn remove_entry(&mut self, entry_id: &Uuid) -> Result<(), Box<dyn Error>> {
+        let _ = self.matchmaker.remove_entry(entry_id);
+        self.senders.remove(entry_id);
         debug!("Removed entry with ID: {}", entry_id);
+        
+        Ok(())
     }
 
     pub fn join_queue(
         &mut self,
         entry: Entry,
-    ) -> Receiver<Result<Value, Box<dyn Error + Send + Sync>>> {
+    ) -> Result<Receiver<Value>, Box<dyn Error>> {
         info!("Joining queue: {:?}", entry);
         let (sender, receiver) = oneshot::channel();
-        self.pending_matches.insert(entry.id(), sender);
-        self.entries.insert(entry.id(), entry);
-        receiver
-    }
+        let id = entry.id();
 
-    pub fn update_matchmaker(
-        &mut self,
-        matchmaker: Box<dyn Matchmaker + Send + Sync>,
-    ) -> Result<(), Box<dyn Error>> {
-        self.matchmaker = matchmaker;
-
-        self.entries
-            .retain(|_, entry| self.matchmaker.is_valid_entry(entry).is_ok());
-
-        Ok(())
+        self.matchmaker.add_entry(entry)?;
+        self.senders.insert(id, sender);
+        Ok(receiver)
     }
 
     pub fn save<P: AsRef<Path>>(&self, name: &str, path: P) -> Result<(), Box<dyn Error>> {
@@ -173,14 +159,13 @@ impl Queue {
 
     pub fn deserialize(json: Value) -> Result<Self, Box<dyn Error>> {
         matchmaker::deserialize(json.clone()).map(|matchmaker| Queue {
-            entries: HashMap::new(),
             matchmaker,
-            pending_matches: HashMap::new(),
+            senders: HashMap::new(),
         })
     }
 
-    pub fn get_entries(&self) -> &HashMap<Uuid, Entry> {
-        &self.entries
+    pub fn get_entries(&self) -> Vec<&Entry> {
+        self.matchmaker.get_entries()
     }
 
     pub fn matchmaker(&self) -> &Box<dyn Matchmaker + Send + Sync> {

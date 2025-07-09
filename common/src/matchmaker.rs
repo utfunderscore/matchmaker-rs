@@ -48,12 +48,20 @@ pub trait Matchmaker: Send + Sync {
     fn get_type_name(&self) -> String;
     fn matchmake(
         &self,
-        entries: Vec<&Entry>,
     ) -> MatchmakerResult;
 
-    fn is_valid_entry(&self, entry: &Entry) -> Result<(), Box<dyn Error>>;
-
     fn serialize(&self) -> Result<Value, Box<dyn Error>>;
+
+    fn remove_all(&mut self);
+    
+    fn get_entries(&self) -> Vec<&Entry>;
+
+    fn remove_entry(&mut self, entry_id: &Uuid) -> Result<(), Box<dyn Error>>;
+
+    fn add_entry(
+        &mut self,
+        entry: Entry,
+    ) -> Result<(), Box<dyn Error>>;
 }
 
 pub type Deserializer =

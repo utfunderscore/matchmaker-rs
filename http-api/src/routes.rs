@@ -105,6 +105,8 @@ pub async fn queue_join(
         }
     }
 
+    // Socket closed here
+    // Remove entries that have not found a match
     for id in entry_ids {
         let queue_tracker = queue_tracker.lock().await;
         let queue = queue_tracker.get_queue(&queue_name);
@@ -134,7 +136,7 @@ async fn on_join_request(
     let entry = Entry::new(join_request.players);
     let entry_id = entry.id();
     
-    let receiver = queue.join_queue(entry);
+    let receiver = queue.join_queue(entry)?;
     tokio::spawn(async move {
         let queue_result = receiver.await;
         if queue_result.is_err() {
@@ -144,14 +146,7 @@ async fn on_join_request(
             );
             return;
         }
-        let result = queue_result.unwrap();
-        let message = match result {
-            Ok(value) => serde_json::to_string(&value).unwrap_or_default(),
-            Err(err) => serde_json::to_string(&json!({
-                "error": err.to_string()
-            }))
-            .unwrap_or_default(),
-        };
+        let message = serde_json::to_string(&queue_result.unwrap()).unwrap_or_default();
 
         sender
             .lock()
@@ -175,7 +170,7 @@ pub async fn get_queues_route(
 
     let futures = queues.iter().map(|(name, queue)| async move {
         let queue: MutexGuard<Queue> = queue.lock().await;
-        let entries: Vec<&Entry> = queue.get_entries().values().collect();
+        let entries = queue.get_entries();
 
         json!({
             "name": name,
@@ -199,7 +194,7 @@ pub async fn get_queue(
     match queue {
         Some(q) => {
             let queue = q.lock().await;
-            let entries: Vec<&Entry> = queue.get_entries().values().collect();
+            let entries = queue.get_entries();
             let matchmaker: Value = queue.matchmaker().serialize().unwrap_or_default();
             let response = json!({
                 "name": name,
