@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::oneshot;
 use tokio::sync::oneshot::{Receiver, Sender};
 use tracing::{debug, error, info, warn};
@@ -15,7 +16,8 @@ use uuid::Uuid;
 pub struct Entry {
     id: Uuid,
     players: Vec<Uuid>,
-    metadata: Map<String, Value>,
+    pub time_queued: u64,
+    pub metadata: Map<String, Value>,
 }
 
 impl Entry {
@@ -23,6 +25,10 @@ impl Entry {
         Entry {
             id: Uuid::new_v4(),
             players,
+            time_queued: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backwards")
+                .as_secs(),
             metadata: Map::new(),
         }
     }
@@ -102,9 +108,9 @@ impl Queue {
 
         //Drain senders and send the reason
         self.senders.drain().for_each(|(_, sender)| {
-           let _ = sender.send(reason.clone()); 
+           let _ = sender.send(reason.clone());
         });
-        
+
     }
 
     pub fn leave_queue(
@@ -130,7 +136,7 @@ impl Queue {
         let _ = self.matchmaker.remove_entry(entry_id);
         self.senders.remove(entry_id);
         debug!("Removed entry with ID: {}", entry_id);
-        
+
         Ok(())
     }
 
