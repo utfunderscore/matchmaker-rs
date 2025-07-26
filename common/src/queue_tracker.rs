@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::{Duration, sleep};
+use tracing::info;
 
 pub struct QueueTracker {
     directory: PathBuf,
@@ -24,6 +25,8 @@ impl QueueTracker {
         if !path.exists() {
             fs::create_dir_all(&path).expect("Failed to create directory for queue tracker");
         }
+
+        info!("Loading queues...");
 
         let mut queues: HashMap<String, Arc<Mutex<Queue>>> = HashMap::new();
         for entry in fs::read_dir(&path)? {
@@ -46,9 +49,13 @@ impl QueueTracker {
             queues: HashMap::new(),
         };
 
+        info!("Registering queues...");
+
         for (name, queue) in queues {
             tracker.register_queue(name, queue)?;
         }
+        
+        info!("Queue tracker initialized.");
 
         Ok(tracker)
     }
@@ -107,5 +114,15 @@ impl QueueTracker {
 
     pub fn get_queues(&self) -> &HashMap<String, Arc<Mutex<Queue>>> {
         &self.queues
+    }
+
+    pub async fn all_queues_empty(&self) -> bool {
+        for queue in self.queues.values() {
+            let queue = queue.lock().await;
+            if !queue.get_entries().is_empty() {
+                return false;
+            }
+        }
+        true
     }
 }
