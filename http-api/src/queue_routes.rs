@@ -27,10 +27,12 @@ pub struct CreateQueueRequest {
 
 #[axum::debug_handler]
 pub async fn create_queue_route(
-    registry: State<Arc<Mutex<QueueTracker>>>,
+    queue_tracker: State<Arc<Mutex<QueueTracker>>>,
     request: Json<CreateQueueRequest>,
 ) -> (StatusCode, Json<Value>) {
-    match create_queue(registry.0, request.0).await {
+    let queue_tracker = queue_tracker.0;
+
+    match create_queue(queue_tracker, request.0).await {
         Ok(_) => (
             StatusCode::CREATED,
             Json(json!({"status": "Queue created successfully"})),
@@ -79,10 +81,10 @@ pub async fn queue_join(
     let sender_mutex: Arc<Mutex<SplitSink<WebSocket, Message>>> = Arc::new(Mutex::new(sender));
 
     let mut entry_ids: Vec<Uuid> = Vec::new();
-    
+
     while let Some(Ok(Text(text))) = receiver.next().await {
         debug!("Received join request: {}", text);
-        
+
         let join_request: Result<QueueJoinRequest, _> = serde_json::from_str(&text);
         if join_request.is_err() {
             let mut sender = sender_mutex.lock().await;
@@ -95,11 +97,11 @@ pub async fn queue_join(
         let id = on_join_request(
             &queue_name,
             join_request.unwrap(),
-            queue_tracker.clone(),
+            queue_tracker.0.clone(),
             sender_mutex.clone(),
         )
         .await;
-        
+
         if let Ok(id) = id {
             entry_ids.push(id);
         }
@@ -117,14 +119,14 @@ pub async fn queue_join(
             debug!("Queue '{}' not found for entry {}", queue_name, id);
         }
     }
-    
+
     debug!("WebSocket connection closed for queue: {}", queue_name);
 }
 
 async fn on_join_request(
     queue_name: &String,
     join_request: QueueJoinRequest,
-    queue_tracker: State<Arc<Mutex<QueueTracker>>>,
+    queue_tracker: Arc<Mutex<QueueTracker>>,
     sender: Arc<Mutex<SplitSink<WebSocket, Message>>>,
 ) -> Result<Uuid, Box<dyn Error>> {
     let queue_tracker = queue_tracker.lock().await;
@@ -135,7 +137,7 @@ async fn on_join_request(
     let mut queue = queue.lock().await;
     let entry = Entry::new(join_request.players);
     let entry_id = entry.id();
-    
+
     let receiver = queue.join_queue(entry)?;
     tokio::spawn(async move {
         let queue_result = receiver.await;
@@ -162,9 +164,9 @@ async fn on_join_request(
 
 #[axum::debug_handler]
 pub async fn get_queues_route(
-    registry: State<Arc<Mutex<QueueTracker>>>,
+    tracker: State<Arc<Mutex<QueueTracker>>>,
 ) -> (StatusCode, Json<Vec<Value>>) {
-    let tracker = registry.lock().await;
+    let tracker = tracker.lock().await;
 
     let queues: &HashMap<String, Arc<Mutex<Queue>>> = tracker.get_queues();
 

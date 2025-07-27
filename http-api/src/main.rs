@@ -1,15 +1,19 @@
 mod data;
-mod routes;
+mod queue_routes;
+mod game_routes;
+mod state;
 
 use axum::Router;
 use axum::routing::{any, get, post};
 use common::queue_tracker::QueueTracker;
 use std::error::Error;
 use std::sync::Arc;
+use tokio::net::TcpListener;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::Mutex;
 use tower_http::trace::TraceLayer;
 use tracing::{info, Level};
+use common::gamefinder::{GameFinder, GameFinderConfig};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -20,24 +24,32 @@ async fn main() -> Result<(), Box<dyn Error>> {
     
     info!("Starting API server...");
 
-    let queue_tracker = Arc::new(Mutex::new(QueueTracker::new("./queues")?));
+    let game_finder_config = GameFinderConfig::load_or_create_config("config.toml").await?;
+
+    let game_finder = Arc::new(Mutex::new(GameFinder::new(game_finder_config)));
+
+    let queue_tracker = Arc::new(Mutex::new(QueueTracker::new("./queues", game_finder)?));
+    let game_finder_config= GameFinderConfig::load_or_create_config("config.toml").await?;
+    info!("GameFinderConfig loaded: {:?}", game_finder_config);
+    let game_finder = Arc::new(Mutex::new(GameFinder::new(game_finder_config)));
+
+    let queue_tracker_clone = queue_tracker.clone();
 
     info!("Loaded all queues...");
 
     let app = Router::new()
         .route(
             "/api/v1/queue",
-            post(routes::create_queue_route).get(routes::get_queues_route),
+            post(queue_routes::create_queue_route).get(queue_routes::get_queues_route),
         )
-        .route("/api/v1/queue/{name}", get(routes::get_queue))
-        .route("/api/v1/queue/{name}/join", any(routes::ws_upgrade))
+        .route("/api/v1/queue/{name}", get(queue_routes::get_queue))
+        .route("/api/v1/queue/{name}/join", any(queue_routes::ws_upgrade))
         .layer(TraceLayer::new_for_http())
-        .with_state(queue_tracker.clone());
+        .with_state(queue_tracker);
 
-    let listener = tokio::net::TcpListener::bind("[::]:8080").await?;
+    let listener = TcpListener::bind("[::]:8080").await?;
     info!("Listening on: {}", listener.local_addr()?);
 
-    let queue_tracker_clone = queue_tracker.clone();
     
     // Set up graceful shutdown on SIGTERM
     let shutdown_signal = async move {
@@ -63,3 +75,5 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
+
+

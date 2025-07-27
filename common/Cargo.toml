@@ -10,7 +10,9 @@ serde_json = "1.0.140"
 uuid = { version = "1.17.0", features = ["v4", "serde"] }
 tokio = { version = "1.45.1", features = ["full"] }
 tracing = "0.1.41"
-tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
+reqwest = { version = "0.12", features = ["json"] }
+jsonpath-rust = "1.0.3"
+toml = "0.9.2"
 
 [dev-dependencies]
 criterion = "0.5"

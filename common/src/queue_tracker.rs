@@ -10,14 +10,16 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::{Duration, sleep};
 use tracing::info;
+use crate::gamefinder::GameFinder;
 
 pub struct QueueTracker {
     directory: PathBuf,
     queues: HashMap<String, Arc<Mutex<Queue>>>,
+    game_finder: Arc<Mutex<GameFinder>>,
 }
 
 impl QueueTracker {
-    pub fn new<T>(path: T) -> Result<Self, Box<dyn Error>>
+    pub fn new<T>(path: T, game_finder: Arc<Mutex<GameFinder>>) -> Result<Self, Box<dyn Error>>
     where
         T: Into<PathBuf>,
     {
@@ -39,7 +41,7 @@ impl QueueTracker {
                     .ok_or("Invalid file name")?
                     .to_string();
 
-                let queue = Queue::from(path)?;
+                let queue = Queue::from(path, game_finder.clone())?;
                 queues.insert(queue_name, Arc::new(Mutex::new(queue)));
             }
         }
@@ -47,6 +49,7 @@ impl QueueTracker {
         let mut tracker = QueueTracker {
             directory: path,
             queues: HashMap::new(),
+            game_finder
         };
 
         info!("Registering queues...");
@@ -69,7 +72,7 @@ impl QueueTracker {
         let deserializer: &Deserializer = matchmaker::get_deserializer(&matchmaker)
             .ok_or(format!("Unknown matchmaker: {}", matchmaker))?;
         let matchmaker: Box<dyn Matchmaker + Send + Sync> = deserializer(settings)?;
-        let queue = Queue::new(matchmaker);
+        let queue = Queue::new(matchmaker, self.game_finder.clone());
 
         queue.save(&name, &self.directory)?;
 

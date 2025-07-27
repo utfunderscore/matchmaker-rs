@@ -1,0 +1,28 @@
+meta {
+  name: create flexible matchmaker
+  type: http
+  seq: 2
+}
+
+post {
+  url: http://localhost:8080/api/v1/queue
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "name":  "example",
+    "matchmaker": "flexible",
+    "settings": {
+      "target_team_size": 1,
+      "min_entry_size": 1,
+      "max_entry_size": 1,
+      "num_teams": 2
+    }
+  }
+}
+
+settings {
+  encodeUrl: true
+}

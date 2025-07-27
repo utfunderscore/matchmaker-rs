@@ -1,3 +1,4 @@
+use crate::gamefinder::GameFinder;
 use crate::matchmaker;
 use crate::matchmaker::{Matchmaker, MatchmakerResult};
 use serde::{Deserialize, Serialize};
@@ -6,8 +7,9 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, Mutex};
 use tokio::sync::oneshot::{Receiver, Sender};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
@@ -44,36 +46,39 @@ impl Entry {
 
 pub struct Queue {
     matchmaker: Box<dyn Matchmaker + Send + Sync>,
-    senders: HashMap<Uuid, Sender<Value>>
+    game_finder: Arc<Mutex<GameFinder>>,
+    senders: HashMap<Uuid, Sender<Value>>,
 }
+
 impl Queue {
-    pub fn new(matchmaker: Box<dyn Matchmaker + Send + Sync>) -> Self {
+    pub fn new(
+        matchmaker: Box<dyn Matchmaker + Send + Sync>,
+        game_finder: Arc<Mutex<GameFinder>>,
+    ) -> Self {
         Queue {
             matchmaker,
+            game_finder,
             senders: HashMap::new(),
         }
     }
 
-    pub fn from(value: PathBuf) -> Result<Self, Box<dyn Error>> {
+    pub fn from(value: PathBuf, game_finder: Arc<Mutex<GameFinder>>) -> Result<Self, Box<dyn Error>> {
         let json = fs::read_to_string(value).expect("Failed to read queue file");
         let json_value: Value = serde_json::from_str(&json).expect("Failed to parse JSON");
-        let mut queue = Queue::deserialize(json_value)?;
+        let mut queue = Queue::deserialize(json_value, game_finder)?;
         queue.senders = HashMap::new();
         Ok(queue)
     }
 
     pub async fn tick(&mut self) -> bool {
-
         let result = self.matchmaker.matchmake();
 
         let success = match result {
             MatchmakerResult::Matched(teams) => {
                 info!("Matched teams: {:?}", teams);
                 for team_id in teams.iter().flatten() {
-                    let remove_result = self.leave_queue(
-                        team_id,
-                        serde_json::to_value(&teams).unwrap_or_default(),
-                    );
+                    let remove_result =
+                        self.leave_queue(team_id, serde_json::to_value(&teams).unwrap_or_default());
                     if let Err(e) = remove_result {
                         error!("Failed to remove entry {}: {}", team_id, e);
                     }
@@ -108,17 +113,11 @@ impl Queue {
 
         //Drain senders and send the reason
         self.senders.drain().for_each(|(_, sender)| {
-           let _ = sender.send(reason.clone());
+            let _ = sender.send(reason.clone());
         });
-
     }
 
-    pub fn leave_queue(
-        &mut self,
-        entry_id: &Uuid,
-        result: Value,
-    ) -> Result<(), Box<dyn Error>> {
-
+    pub fn leave_queue(&mut self, entry_id: &Uuid, result: Value) -> Result<(), Box<dyn Error>> {
         self.matchmaker.remove_entry(entry_id)?;
         let sender = self.senders.remove(entry_id);
 
@@ -140,10 +139,7 @@ impl Queue {
         Ok(())
     }
 
-    pub fn join_queue(
-        &mut self,
-        entry: Entry,
-    ) -> Result<Receiver<Value>, Box<dyn Error>> {
+    pub fn join_queue(&mut self, entry: Entry) -> Result<Receiver<Value>, Box<dyn Error>> {
         info!("Joining queue: {:?}", entry);
         let (sender, receiver) = oneshot::channel();
         let id = entry.id();
@@ -163,9 +159,10 @@ impl Queue {
         matchmaker::serialize(self.matchmaker())
     }
 
-    pub fn deserialize(json: Value) -> Result<Self, Box<dyn Error>> {
+    pub fn deserialize(json: Value, game_finder: Arc<Mutex<GameFinder>>) -> Result<Self, Box<dyn Error>> {
         matchmaker::deserialize(json.clone()).map(|matchmaker| Queue {
             matchmaker,
+            game_finder,
             senders: HashMap::new(),
         })
     }

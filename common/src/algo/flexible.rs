@@ -17,6 +17,7 @@ pub struct FlexibleMatchMaker {
     valid_team_compositions: Vec<Vec<i16>>,
     #[serde(skip)]
     teams_by_size: Vec<Vec<Uuid>>, // the index of the first array is the team size
+    #[serde(skip)]
     teams: HashMap<Uuid, Entry>,
 }
 
