@@ -4,18 +4,20 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::error::Error;
 use std::path::Path;
+use lazy_static::lazy_static;
 use tokio::{fs, io};
 use uuid::Uuid;
 
-pub struct GameResult {
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Game {
     pub game_id: String,
     pub host: String,
     pub port: u16,
 }
 
-impl GameResult {
-    pub fn new(game_id: String, host: String, port: u16) -> GameResult {
-        GameResult {
+impl Game {
+    pub fn new(game_id: String, host: String, port: u16) -> Game {
+        Game {
             game_id,
             host,
             port,
@@ -23,7 +25,7 @@ impl GameResult {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct GameFinderConfig {
     pub base_url: String,
     pub id_path: String,
@@ -60,26 +62,29 @@ impl GameFinderConfig {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct GameFinder {
-    pub client: Client,
     pub config: GameFinderConfig,
+}
+
+lazy_static! {
+    static ref CLIENT: Client = Client::new();
 }
 
 impl GameFinder {
 
     pub fn new(config: GameFinderConfig) -> GameFinder {
-        let client = Client::new();
-        GameFinder { client, config }
+        GameFinder { config }
     }
 
     pub async fn find_game(
         &self,
-        playlist: String,
-        players: Vec<Vec<Uuid>>,
-    ) -> Result<GameResult, Box<dyn Error>> {
-        let url = self.config.base_url.replace("{playlist}}", playlist.as_str());
+        playlist: &str,
+        players: &Vec<Vec<Uuid>>,
+    ) -> Result<Game, Box<dyn Error>> {
+        let url = self.config.base_url.replace("{playlist}}", playlist);
 
-        let response = self.client.get(&url).json(&players).send().await?;
+        let response = CLIENT.get(&url).json(&players).send().await?;
 
         if !response.status().is_success() {
             return Err("Game not found".into());
@@ -106,6 +111,6 @@ impl GameFinder {
             .and_then(|x| x.as_u64())
             .unwrap_or(0);
 
-        Ok(GameResult::new(game_id.into(), host.into(), port as u16))
+        Ok(Game::new(game_id.into(), host.into(), port as u16))
     }
 }

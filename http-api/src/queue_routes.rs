@@ -4,7 +4,7 @@ use axum::extract::ws::{Message, WebSocket};
 use axum::extract::{Path, State, WebSocketUpgrade};
 use axum::http::StatusCode;
 use axum::response::Response;
-use common::queue::{Entry, Queue};
+use common::queue::{Entry, Queue, QueueResult};
 use common::queue_tracker::QueueTracker;
 use futures_util::SinkExt;
 use futures_util::future::join_all;
@@ -139,23 +139,34 @@ async fn on_join_request(
     let entry_id = entry.id();
 
     let receiver = queue.join_queue(entry)?;
+
     tokio::spawn(async move {
         let queue_result = receiver.await;
-        if queue_result.is_err() {
-            println!(
-                "Error waiting for queue result: {}",
-                queue_result.unwrap_err()
-            );
-            return;
-        }
-        let message = serde_json::to_string(&queue_result.unwrap()).unwrap_or_default();
+        if let Ok(queue_result) = queue_result {
+            let mut sender = sender.lock().await;
 
-        sender
-            .lock()
-            .await
-            .send(Text(message.into()))
-            .await
-            .unwrap();
+            match queue_result {
+                QueueResult::Success(teams, game) => {
+                    let response = json!({
+                        "status": "success",
+                        "teams": teams,
+                        "game": game,
+                    });
+                    let _ = sender.send(Text(response.to_string().into())).await;
+                }
+                QueueResult::Error(err) => {
+                    let response = json!({
+                        "status": "error",
+                        "message": err,
+                    });
+                    let _ = sender.send(Text(response.to_string().into())).await;
+                }
+            }
+        } else {
+            debug!("Failed to receive queue result for entry {}", entry_id);
+        }
+
+
     });
 
     Ok(entry_id)
@@ -197,11 +208,13 @@ pub async fn get_queue(
         Some(q) => {
             let queue = q.lock().await;
             let entries = queue.get_entries();
-            let matchmaker: Value = queue.matchmaker().serialize().unwrap_or_default();
+            let matchmaker = queue.matchmaker().get_type_name();
+            let settings: Value = queue.matchmaker().serialize().unwrap_or_default();
             let response = json!({
                 "name": name,
                 "entries": entries,
                 "matchmaker": matchmaker,
+                "settings": settings,
             });
             (StatusCode::OK, Json(response))
         }

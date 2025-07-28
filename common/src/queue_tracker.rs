@@ -1,15 +1,17 @@
 use crate::matchmaker;
-use crate::matchmaker::{Deserializer, Matchmaker};
-use crate::queue::Queue;
+use crate::matchmaker::{Deserializer, Matchmaker, MatchmakerResult};
+use crate::queue::{Entry, Queue, QueueResult};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, MutexGuard};
+use tokio::sync::oneshot::Sender;
 use tokio::time::{Duration, sleep};
 use tracing::info;
+use uuid::Uuid;
 use crate::gamefinder::GameFinder;
 
 pub struct QueueTracker {
@@ -41,7 +43,7 @@ impl QueueTracker {
                     .ok_or("Invalid file name")?
                     .to_string();
 
-                let queue = Queue::from(path, game_finder.clone())?;
+                let queue = Queue::from(path)?;
                 queues.insert(queue_name, Arc::new(Mutex::new(queue)));
             }
         }
@@ -70,9 +72,9 @@ impl QueueTracker {
         settings: Value,
     ) -> Result<(), Box<dyn Error>> {
         let deserializer: &Deserializer = matchmaker::get_deserializer(&matchmaker)
-            .ok_or(format!("Unknown matchmaker: {}", matchmaker))?;
+            .ok_or(format!("Unknown matchmaker: {matchmaker}"))?;
         let matchmaker: Box<dyn Matchmaker + Send + Sync> = deserializer(settings)?;
-        let queue = Queue::new(matchmaker, self.game_finder.clone());
+        let queue = Queue::new(matchmaker);
 
         queue.save(&name, &self.directory)?;
 
@@ -89,26 +91,92 @@ impl QueueTracker {
         queue: Arc<Mutex<Queue>>,
     ) -> Result<(), Box<dyn Error>> {
         if self.queues.contains_key(&name) {
-            return Err(format!("Queue '{}' already exists", name).into());
+            return Err(format!("Queue '{name}' already exists").into());
         }
-        let task_queue = Arc::clone(&queue);
+        let task_queue = queue.clone();
 
+        let name_clone = name.clone();
+
+        let game_finder = self.game_finder.clone();
         tokio::spawn(async move {
+
+
+            let name = name_clone;
+
             loop {
-                
-                let mut queue = task_queue.lock().await;
+
+
+                let mut queue: MutexGuard<Queue> = task_queue.lock().await;
                 let result = queue.tick().await;
-                
-                drop(queue);
-                
-                if !result {
-                    sleep(Duration::from_millis(50)).await;
+
+                match result {
+                    MatchmakerResult::Matched(team_ids) => {
+                        let teams: Result<Vec<Vec<Entry>>, String> = QueueTracker::remove_all(&mut queue, team_ids.clone());
+                        let senders: Vec<Sender<QueueResult>> = team_ids.iter()
+                            .flat_map(|team| team.iter())
+                            .filter_map(|entry| queue.remove_sender(entry))
+                            .collect();
+
+                        if let Ok(teams) = teams {
+                            let players: Vec<Vec<Uuid>> = teams.iter()
+                                .map(|team| team.iter().map(|entry| entry.id()).collect())
+                                .collect();
+
+                            let game_finder = game_finder.lock().await;
+                            let game = game_finder.find_game(&name, &players).await;
+                            drop(game_finder);
+
+                            if let Ok(game) = game {
+                                for sender in senders {
+                                    let queue_result = QueueResult::Success(teams.clone(), game.clone());
+                                    let _ = sender.send(queue_result);
+                                }
+
+                            } else {
+                                info!("No game found for queue '{}'", name);
+                            }
+
+                        } else {
+                            // Handle error in removing entries
+                            info!("Error removing entries from queue: {:?}", teams.err());
+
+                        }
+
+                    }
+                    MatchmakerResult::Skip(err) => {}
+                    MatchmakerResult::Error(err) => {
+                        let entries = queue.remove_all();
+
+                        for x in entries {
+                            let sender = queue.remove_sender(&x.id());
+                            if let Some(sender) = sender {
+                                let _ = sender.send(QueueResult::Error(err.clone()));
+                            }
+                        }
+                    }
                 }
+
+                // Sleep for a short duration to avoid busy waiting
+                sleep(Duration::from_millis(100)).await;
+
             }
         });
 
         self.queues.insert(name, queue);
         Ok(())
+    }
+
+    pub fn remove_all(queue: &mut MutexGuard<Queue>, teams: Vec<Vec<Uuid>>) -> Result<Vec<Vec<Entry>>, String> {
+        let mut results = Vec::new();
+        for team in teams {
+            let mut entries = Vec::new();
+            for id in team {
+                let entry = queue.remove_entry(&id).map_err(|e| e.to_string())?;
+                entries.push(entry);
+            }
+            results.push(entries);
+        }
+        Ok(results)
     }
 
     pub fn get_queue(&self, name: &str) -> Option<Arc<Mutex<Queue>>> {

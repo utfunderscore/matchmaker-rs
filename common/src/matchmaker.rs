@@ -6,10 +6,11 @@ use std::collections::HashMap;
 use std::error::Error;
 use uuid::Uuid;
 
+#[derive(PartialEq)]
 pub enum MatchmakerResult {
     Matched(Vec<Vec<Uuid>>),
     Skip(String),
-    Error((String, Option<Vec<Uuid>>)),
+    Error(String),
 }
 
 impl MatchmakerResult {
@@ -34,7 +35,7 @@ impl MatchmakerResult {
         }
     }
     
-    pub fn unwarp_err(&self) -> (String, Option<Vec<Uuid>>) {
+    pub fn unwarp_err(&self) -> String {
         if let MatchmakerResult::Error(err) = self {
             err.clone()
         } else {
@@ -52,11 +53,13 @@ pub trait Matchmaker: Send + Sync {
 
     fn serialize(&self) -> Result<Value, Box<dyn Error>>;
 
-    fn remove_all(&mut self);
+    fn remove_all(&mut self) -> Vec<Entry>;
     
     fn get_entries(&self) -> Vec<&Entry>;
 
-    fn remove_entry(&mut self, entry_id: &Uuid) -> Result<(), Box<dyn Error>>;
+    fn remove_entry(&mut self, entry_id: &Uuid) -> Result<Entry, Box<dyn Error>>;
+
+    fn get_entry(&self, entry_id: &Uuid) -> Option<&Entry>;
 
     fn add_entry(
         &mut self,

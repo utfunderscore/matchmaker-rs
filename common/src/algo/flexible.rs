@@ -108,23 +108,27 @@ impl Matchmaker for FlexibleMatchMaker {
         Ok(serde_json::to_value(self)?)
     }
 
-    fn remove_all(&mut self) {
-        self.teams.clear();
+    fn remove_all(&mut self) -> Vec<Entry> {
         self.teams_by_size.clear();
+        self.teams.drain().map(|(_, entry)| entry).collect()
     }
 
     fn get_entries(&self) -> Vec<&Entry> {
         self.teams.values().collect()
     }
 
-    fn remove_entry(&mut self, entry_id: &Uuid) -> Result<(), Box<dyn Error>> {
-        let entry = self.teams.get(entry_id).unwrap();
+    fn remove_entry(&mut self, entry_id: &Uuid) -> Result<Entry, Box<dyn Error>> {
+        let entry = self.teams.remove(entry_id).ok_or("Entry not found")?;
         let size = entry.entries().len();
 
         let teams = self.teams_by_size.get_mut(size).unwrap();
         teams.retain(|id| id != entry_id);
 
-        Ok(())
+        Ok(entry)
+    }
+
+    fn get_entry(&self, entry_id: &Uuid) -> Option<&Entry> {
+        self.teams.get(entry_id)
     }
 
     fn add_entry(&mut self, entry: Entry) -> Result<(), Box<dyn Error>> {
