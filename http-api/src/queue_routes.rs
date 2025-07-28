@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
 use tokio::sync::{Mutex, MutexGuard};
-use tracing::debug;
+use tracing::{debug, info};
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize)]
@@ -66,6 +66,7 @@ pub async fn ws_upgrade(
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(transparent)]
 struct QueueJoinRequest {
     players: Vec<Uuid>,
 }
@@ -75,12 +76,21 @@ pub async fn queue_join(
     queue_tracker: State<Arc<Mutex<QueueTracker>>>,
     queue_name: String,
 ) {
-    let (sender, mut receiver): (SplitSink<WebSocket, Message>, SplitStream<WebSocket>) =
+    let (mut sender, mut receiver): (SplitSink<WebSocket, Message>, SplitStream<WebSocket>) =
         socket.split();
 
-    let sender_mutex: Arc<Mutex<SplitSink<WebSocket, Message>>> = Arc::new(Mutex::new(sender));
-
     let mut entry_ids: Vec<Uuid> = Vec::new();
+
+    if queue_tracker.0.lock().await.get_queue(&queue_name).is_none() {
+        let _ = sender
+            .send(Text(
+                format!("Queue '{queue_name}' does not exist").into(),
+            ))
+            .await;
+        return;
+    }
+
+    let sender_mutex: Arc<Mutex<SplitSink<WebSocket, Message>>> = Arc::new(Mutex::new(sender));
 
     while let Some(Ok(Text(text))) = receiver.next().await {
         debug!("Received join request: {}", text);
@@ -94,16 +104,33 @@ pub async fn queue_join(
                 .await;
             continue;
         }
-        let id = on_join_request(
+        let join_result: Result<Uuid, String> = on_join_request(
             &queue_name,
             join_request.unwrap(),
             queue_tracker.0.clone(),
             sender_mutex.clone(),
         )
-        .await;
+        .await
+        .map_err(|e| e.to_string());
 
-        if let Ok(id) = id {
-            entry_ids.push(id);
+        match join_result {
+            Ok(id) => {
+                entry_ids.push(id);
+            }
+            Err(err) => {
+                let mut sender = sender_mutex.lock().await;
+                let _ = sender
+                    .send(Text(format!("Failed to join queue: {err}").into()))
+                    .await;
+                info!("Failed to join queue for request:. Error: {}", text);
+                continue;
+            }
+        }
+
+        if let Ok(id) = join_result {
+        } else {
+            info!("Failed to join queue for request: {}", text);
+            continue;
         }
     }
 
@@ -165,8 +192,6 @@ async fn on_join_request(
         } else {
             debug!("Failed to receive queue result for entry {}", entry_id);
         }
-
-
     });
 
     Ok(entry_id)

@@ -1,3 +1,4 @@
+use crate::gamefinder::GameFinder;
 use crate::matchmaker;
 use crate::matchmaker::{Deserializer, Matchmaker, MatchmakerResult};
 use crate::queue::{Entry, Queue, QueueResult};
@@ -7,12 +8,11 @@ use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::{Mutex, MutexGuard};
 use tokio::sync::oneshot::Sender;
+use tokio::sync::{Mutex, MutexGuard};
 use tokio::time::{Duration, sleep};
 use tracing::info;
 use uuid::Uuid;
-use crate::gamefinder::GameFinder;
 
 pub struct QueueTracker {
     directory: PathBuf,
@@ -51,7 +51,7 @@ impl QueueTracker {
         let mut tracker = QueueTracker {
             directory: path,
             queues: HashMap::new(),
-            game_finder
+            game_finder,
         };
 
         info!("Registering queues...");
@@ -59,7 +59,7 @@ impl QueueTracker {
         for (name, queue) in queues {
             tracker.register_queue(name, queue)?;
         }
-        
+
         info!("Queue tracker initialized.");
 
         Ok(tracker)
@@ -94,31 +94,28 @@ impl QueueTracker {
             return Err(format!("Queue '{name}' already exists").into());
         }
         let task_queue = queue.clone();
-
         let name_clone = name.clone();
-
         let game_finder = self.game_finder.clone();
         tokio::spawn(async move {
-
-
             let name = name_clone;
 
             loop {
-
-
                 let mut queue: MutexGuard<Queue> = task_queue.lock().await;
                 let result = queue.tick().await;
 
                 match result {
                     MatchmakerResult::Matched(team_ids) => {
-                        let teams: Result<Vec<Vec<Entry>>, String> = QueueTracker::remove_all(&mut queue, team_ids.clone());
-                        let senders: Vec<Sender<QueueResult>> = team_ids.iter()
+                        let teams: Result<Vec<Vec<Entry>>, String> =
+                            QueueTracker::remove_all(&mut queue, team_ids.clone());
+                        let senders: Vec<Sender<QueueResult>> = team_ids
+                            .iter()
                             .flat_map(|team| team.iter())
                             .filter_map(|entry| queue.remove_sender(entry))
                             .collect();
 
                         if let Ok(teams) = teams {
-                            let players: Vec<Vec<Uuid>> = teams.iter()
+                            let players: Vec<Vec<Uuid>> = teams
+                                .iter()
                                 .map(|team| team.iter().map(|entry| entry.id()).collect())
                                 .collect();
 
@@ -128,20 +125,17 @@ impl QueueTracker {
 
                             if let Ok(game) = game {
                                 for sender in senders {
-                                    let queue_result = QueueResult::Success(teams.clone(), game.clone());
+                                    let queue_result =
+                                        QueueResult::Success(teams.clone(), game.clone());
                                     let _ = sender.send(queue_result);
                                 }
-
                             } else {
                                 info!("No game found for queue '{}'", name);
                             }
-
                         } else {
                             // Handle error in removing entries
                             info!("Error removing entries from queue: {:?}", teams.err());
-
                         }
-
                     }
                     MatchmakerResult::Skip(err) => {}
                     MatchmakerResult::Error(err) => {
@@ -158,7 +152,6 @@ impl QueueTracker {
 
                 // Sleep for a short duration to avoid busy waiting
                 sleep(Duration::from_millis(100)).await;
-
             }
         });
 
@@ -166,7 +159,10 @@ impl QueueTracker {
         Ok(())
     }
 
-    pub fn remove_all(queue: &mut MutexGuard<Queue>, teams: Vec<Vec<Uuid>>) -> Result<Vec<Vec<Entry>>, String> {
+    pub fn remove_all(
+        queue: &mut MutexGuard<Queue>,
+        teams: Vec<Vec<Uuid>>,
+    ) -> Result<Vec<Vec<Entry>>, String> {
         let mut results = Vec::new();
         for team in teams {
             let mut entries = Vec::new();
