@@ -22,17 +22,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .with_max_level(Level::DEBUG)
         .init();
     
-    info!("Starting API server...");
+    info!("Loading config...");
 
     let game_finder_config = GameFinderConfig::load_or_create_config("config.toml").await?;
 
     let game_finder = Arc::new(Mutex::new(GameFinder::new(game_finder_config)));
 
+    info!("Initializing queue tracker...");
     let queue_tracker = Arc::new(Mutex::new(QueueTracker::new("./queues", game_finder)?));
-    let game_finder_config= GameFinderConfig::load_or_create_config("config.toml").await?;
-    info!("GameFinderConfig loaded: {:?}", game_finder_config);
-    let game_finder = Arc::new(Mutex::new(GameFinder::new(game_finder_config)));
-
     let queue_tracker_clone = queue_tracker.clone();
 
     info!("Loaded all queues...");
