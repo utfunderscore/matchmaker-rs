@@ -15,46 +15,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@v1
-        with:
-          toolchain: stable
-
-      - name: Cache Cargo registry
-        uses: actions/cache@v3
-        with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-registry-
-
-      - name: Cache Cargo index
-        uses: actions/cache@v3
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-index-
-
-      - name: Cache Cargo build
-        uses: actions/cache@v3
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-build-
-
-      - name: Build project
-        run: cargo build --release
-
-      - name: Upload build artifact
+      - uses: actions/checkout@v5
+      - run: rustup update ubuntu-latest && rustup default ubuntu-latest
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --verbose --release
+      - name: Export executable
         uses: actions/upload-artifact@v4
         with:
-          name: matchmaker
-          path: target/release/matchmaker
+          name: pumpkin-${{ matrix.os }}
+          compression-level: 9
+          path: target/ubuntu-latest/release/pumpkin*
 
   release:
     name: Create GitHub Release
