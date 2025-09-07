@@ -10,8 +10,8 @@ on:
       - "v*"
 
 jobs:
-  build:
-    name: Build Rust Project
+  build_and_docker:
+    name: Build Rust Project and Docker Image
     runs-on: ubuntu-latest
 
     steps:
@@ -21,46 +21,8 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y musl-tools
       - run: rustup target add x86_64-unknown-linux-musl
       - run: cargo build --package http-api --release --target x86_64-unknown-linux-musl
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: matchmaker
-          path: target/x86_64-unknown-linux-musl/release/http-api
-  release:
-    name: Create GitHub Release
-    needs: build
-    runs-on: ubuntu-latest
 
-    steps:
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: matchmaker
-
-      - name: Create GitHub Release
-        uses: ncipollo/release-action@v1.20.0
-        with:
-          artifacts: matchmaker
-          token: ${{ secrets.GITHUB_TOKEN }}
-          tag: ${{ github.ref_name }}
-          name: Release ${{ github.ref_name }}
-          body: |
-            Automated release for version ${{ github.ref_name }}.
-
-  docker:
-    name: Build and Publish Docker Image
-    needs: release
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: matchmaker
-
+      # Docker build expects the binary at a known location
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
