@@ -14,14 +14,45 @@ jobs:
     name: Build Rust Project and Docker Image
     runs-on: ubuntu-latest
 
+    env:
+      CARGO_TERM_COLOR: always
+      PACKAGE_NAME: http-api
+      TARGET: x86_64-unknown-linux-musl
+
     steps:
-      - uses: actions/checkout@v5
-      - run: rustup update stable && rustup default stable
-      - run: rustup target add x86_64-unknown-linux-musl
-      - run: sudo apt-get install -y musl-tools
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo build --package http-api --release --target x86_64-unknown-linux-musl
-      # Docker build expects the binary at a known location
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          target: ${{ env.TARGET }}
+
+      - name: Install musl-tools
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Cache Rust dependencies and build outputs
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v2-rust
+          cache-targets: true
+          cache-all-crates: true
+          cache-workspace-crates: true
+          cache-provider: github
+          cache-bin: true
+          save-if: ${{ github.ref_type == 'tag' }}
+
+      - name: Build release binary
+        run: cargo build --package ${{ env.PACKAGE_NAME }} --release --target ${{ env.TARGET }}
+
+      - name: Upload built binary as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PACKAGE_NAME }}-binary
+          path: target/${{ env.TARGET }}/release/${{ env.PACKAGE_NAME }}
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -32,6 +63,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Extract Git metadata for Docker labels
+        id: git_meta
+        run: |
+          echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          echo "date=$(date --utc +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -41,3 +79,8 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}:${{ github.ref_name }}
             ghcr.io/${{ github.repository }}:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.git_meta.outputs.sha }}
+            org.opencontainers.image.created=${{ steps.git_meta.outputs.date }}
+            org.opencontainers.image.version=${{ steps.git_meta.outputs.tag }}
