@@ -1,14 +1,19 @@
-FROM rust:1.68
+FROM debian:bookworm-slim
 
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
-RUN addgroup -g 1001 -S appgroup && \
-    adduser -S -D -H -u 1001 -s /sbin/nologin -G appgroup appuser
+RUN groupadd -g 1001 appgroup && \
+    useradd -r -u 1001 -g appgroup -s /usr/sbin/nologin appuser
 
 WORKDIR /app
 
 # Copy binary and set permissions before changing user
-COPY target/x86_64-unknown-linux-musl/release/http-api http-api
+COPY target/x86_64-unknown-linux-gnu/release/http-api http-api
 RUN chmod +x http-api && \
     chown appuser:appgroup http-api && \
     chown appuser:appgroup /app && \
