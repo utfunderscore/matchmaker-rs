@@ -1,7 +1,5 @@
-FROM rust:1.68-alpine
+FROM rust:1.68
 
-# Install dependencies
-RUN apk add --no-cache openssl-dev musl-dev
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S appgroup && \
