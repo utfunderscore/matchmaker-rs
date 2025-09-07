@@ -127,7 +127,7 @@ pub async fn queue_join(
             }
         }
 
-        if let Ok(id) = join_result {
+        if let Ok(_) = join_result {
         } else {
             info!("Failed to join queue for request: {}", text);
             continue;

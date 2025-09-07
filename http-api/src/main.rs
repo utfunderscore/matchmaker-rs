@@ -1,7 +1,6 @@
 mod data;
 mod queue_routes;
 mod game_routes;
-mod state;
 
 use axum::Router;
 use axum::routing::{any, get, post};
@@ -12,14 +11,15 @@ use tokio::net::TcpListener;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::Mutex;
 use tower_http::trace::TraceLayer;
-use tracing::{info, Level};
+use tracing::{info};
+use tracing_subscriber::EnvFilter;
 use common::gamefinder::{GameFinder, GameFinderConfig};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
 
     tracing_subscriber::fmt()
-        .with_max_level(Level::DEBUG)
+        .with_env_filter(EnvFilter::from_default_env())
         .init();
     
     info!("Loading config...");

@@ -9,7 +9,7 @@ serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 tokio = { version = "1.45.1", features = ["full"] }
 tracing = { version = "0.1.41", features = ["std", "log"] }
-tracing-subscriber = "0.3.19"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 common = { path = "../common" }
 futures-util = "0.3.31"
 uuid = { version = "1.17.0", features = ["v4", "serde"] }

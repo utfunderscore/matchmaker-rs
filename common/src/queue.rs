@@ -1,4 +1,4 @@
-use crate::gamefinder::{GameFinder, GameFinderConfig, Game};
+use crate::gamefinder::{Game};
 use crate::matchmaker;
 use crate::matchmaker::{Matchmaker, MatchmakerResult};
 use serde::{Deserialize, Serialize};

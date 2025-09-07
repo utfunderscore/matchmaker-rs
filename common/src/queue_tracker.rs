@@ -137,7 +137,7 @@ impl QueueTracker {
                             info!("Error removing entries from queue: {:?}", teams.err());
                         }
                     }
-                    MatchmakerResult::Skip(err) => {}
+                    MatchmakerResult::Skip(_) => {}
                     MatchmakerResult::Error(err) => {
                         let entries = queue.remove_all();
 
