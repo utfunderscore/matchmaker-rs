@@ -1,2 +1,2 @@
 pub mod flexible;
-mod elo;
+pub mod elo;

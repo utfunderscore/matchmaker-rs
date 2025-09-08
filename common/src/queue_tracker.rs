@@ -77,7 +77,7 @@ impl QueueTracker {
         let queue = Queue::new(matchmaker);
 
         queue.save(&name, &self.directory)?;
-
+        
         let queue_mutex = Arc::new(Mutex::new(queue));
 
         self.register_queue(name, queue_mutex)?;

@@ -1,6 +1,5 @@
 mod data;
 mod queue_routes;
-mod game_routes;
 
 use axum::Router;
 use axum::routing::{any, get, post};

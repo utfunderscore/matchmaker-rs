@@ -9,7 +9,7 @@ use tracing::warn;
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-struct EloMatchmaker {
+pub struct EloMatchmaker {
     scaling_factor: f32,
     #[serde(skip)]
     elo_map: BTreeMap<i64, HashSet<Uuid>>,
@@ -18,6 +18,14 @@ struct EloMatchmaker {
 }
 
 impl EloMatchmaker {
+    fn new(scaling_factor: f32) -> EloMatchmaker {
+        EloMatchmaker {
+            scaling_factor,
+            elo_map: BTreeMap::new(),
+            entries: HashMap::new(),
+        }
+    }
+
     fn get_elo(entry: &Entry) -> Option<i64> {
         entry.metadata.get("elo").map(|v| v.as_i64()).flatten()
     }
@@ -25,6 +33,16 @@ impl EloMatchmaker {
     fn get_elo_range(&self, queue_time: u64, elo: i64) -> (i64, i64) {
         let incr = (queue_time as f32 * self.scaling_factor) as i64;
         (elo - incr, elo + incr)
+    }
+
+    pub fn deserialize(value: Value) -> Result<Box<dyn Matchmaker + Send + Sync>, Box<dyn Error>> {
+        let scaling_factor_value = value.get("scalingFactor").ok_or(String::from("Missing scaling factor"))?;
+        let scaling_factor = scaling_factor_value.as_f64().ok_or(String::from("Scaling factor is an invalid type"))?;
+        if scaling_factor > f32::MAX as f64 {
+            return Err(String::from("Scaling factor is too high").into());
+        }
+
+        Ok(Box::new(EloMatchmaker::new(scaling_factor as f32)))
     }
 }
 

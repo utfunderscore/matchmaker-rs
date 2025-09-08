@@ -7,7 +7,6 @@ use axum::response::Response;
 use common::queue::{Entry, Queue, QueueResult};
 use common::queue_tracker::QueueTracker;
 use futures_util::SinkExt;
-use futures_util::future::join_all;
 use futures_util::stream::{SplitSink, SplitStream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -17,6 +16,7 @@ use std::sync::Arc;
 use tokio::sync::{Mutex, MutexGuard};
 use tracing::{debug, info};
 use uuid::Uuid;
+use crate::data::QueueData;
 
 #[derive(Serialize, Deserialize)]
 pub struct CreateQueueRequest {
@@ -201,51 +201,60 @@ async fn on_join_request(
 #[axum::debug_handler]
 pub async fn get_queues_route(
     tracker: State<Arc<Mutex<QueueTracker>>>,
-) -> (StatusCode, Json<Vec<Value>>) {
+) -> (StatusCode, Json<Value>) {
     let tracker = tracker.lock().await;
 
     let queues: &HashMap<String, Arc<Mutex<Queue>>> = tracker.get_queues();
+    let mut mapped: Vec<QueueData> = Vec::with_capacity(queues.len());
 
-    let futures = queues.iter().map(|(name, queue)| async move {
-        let queue: MutexGuard<Queue> = queue.lock().await;
+    for (name, queue_mutex) in queues {
+        let queue = queue_mutex.lock().await;
         let entries = queue.get_entries();
+        let matchmaker = queue.matchmaker().serialize();
+        let Ok(matchmaker) = matchmaker else {
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(Value::String(String::from("Failed to convert matchmaker to json"))))
+        };
+        let queue_data = QueueData::new(name.clone(), entries.into_iter().cloned().collect(), matchmaker);
 
-        json!({
-            "name": name,
-            "entries": entries,
-        })
-    });
+        mapped.push(queue_data);
+    }
 
-    let queue_data: Vec<Value> = join_all(futures).await;
+    let Ok(queues) = serde_json::to_value(mapped) else {
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(Value::String(String::from("Error occurred converting to json."))))
+    };
 
-    (StatusCode::OK, Json(queue_data))
+    (StatusCode::OK, Json(queues))
 }
 #[axum::debug_handler]
 pub async fn get_queue(
     registry: State<Arc<Mutex<QueueTracker>>>,
     Path(name): Path<String>,
-) -> (StatusCode, Json<Value>) {
+) -> (StatusCode, String) {
     let registry = registry.lock().await;
 
     let queue = registry.get_queue(&name);
 
     match queue {
         Some(q) => {
-            let queue = q.lock().await;
-            let entries = queue.get_entries();
-            let matchmaker = queue.matchmaker().get_type_name();
-            let settings: Value = queue.matchmaker().serialize().unwrap_or_default();
-            let response = json!({
-                "name": name,
-                "entries": entries,
-                "matchmaker": matchmaker,
-                "settings": settings,
-            });
-            (StatusCode::OK, Json(response))
+            let queue: MutexGuard<Queue> = q.lock().await;
+            let matchmaker_settings:  Result<Value, Box<dyn Error>> = queue.matchmaker().serialize();
+            let Ok(matchmaker_settings) = matchmaker_settings else {
+                return (StatusCode::INTERNAL_SERVER_ERROR, String::from("Error occurred converting to json."))
+            };
+
+            let queue_data = QueueData::new(name, queue.get_entries().into_iter().cloned().collect(), matchmaker_settings);
+            let response = serde_json::to_string(&queue_data);
+            match response {
+                Ok(json) => {
+                    (StatusCode::OK, json)}
+                Err(_) => {
+                    (StatusCode::INTERNAL_SERVER_ERROR, String::from("Error occurred converting to json."))
+                }
+            }
         }
         None => (
             StatusCode::NOT_FOUND,
-            Json(Value::String(format!("Queue '{}' not found", name))),
+            format!("Queue '{}' not found", name),
         ),
     }
 }

@@ -1,4 +1,5 @@
 use crate::algo::flexible::FlexibleMatchMaker;
+use crate::algo::elo::{EloMatchmaker};
 use crate::queue::Entry;
 use lazy_static::lazy_static;
 use serde_json::Value;
@@ -75,6 +76,7 @@ lazy_static! {
         let mut m: HashMap<String, Deserializer> = HashMap::new();
         // Populate with actual deserializers
         m.insert("flexible".to_string(), Box::new(FlexibleMatchMaker::deserialize));
+        m.insert("elo".to_string(), Box::new(EloMatchmaker::deserialize));
         m
     };
 }

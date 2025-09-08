@@ -4,7 +4,17 @@ use serde_json::Value;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueueData {
-    pub name: String,
-    pub entries: Vec<Entry>,
-    pub matchmaker: Value,
+    name: String,
+    entries: Vec<Entry>,
+    matchmaker: Value,
+}
+
+impl QueueData {
+    pub fn new(name: String, entries: Vec<Entry>, matchmaker: Value) -> Self {
+        QueueData {
+            name,
+            entries,
+            matchmaker,
+        }
+    }
 }
