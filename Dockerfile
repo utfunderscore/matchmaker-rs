@@ -12,6 +12,14 @@ RUN groupadd -g 1001 appgroup && \
 
 WORKDIR /app
 
+# Create a data directory for volume mount and set permissions
+RUN mkdir -p /app/data && \
+    chown appuser:appgroup /app/data && \
+    chmod 755 /app/data
+
+# Declare /app/data as a volume (optional, for documentation and best practices)
+VOLUME ["/app/data"]
+
 # Copy binary and set permissions before changing user
 COPY target/x86_64-unknown-linux-gnu/release/http-api http-api
 RUN chmod +x http-api && \
