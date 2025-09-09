@@ -134,6 +134,11 @@ impl QueueTracker {
                                 }
                             } else {
                                 info!("No game found for queue '{}'", name);
+                                for sender in senders {
+                                    let queue_result =
+                                    QueueResult::Error(String::from("Could not find available game server."));
+                                    let _ = sender.send(queue_result);
+                                }
                             }
                         } else {
                             // Handle error in removing entries

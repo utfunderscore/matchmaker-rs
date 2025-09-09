@@ -1,26 +1,22 @@
-use axum::extract::ws::Message::Text;
-use axum::extract::ws::{Message, WebSocket};
-use axum::extract::{Path, State, WebSocketUpgrade};
-use axum::response::Response;
+use crate::data::{ErrorSocketResponse, QueueJoinRequest, SocketResponse, SuccessSocketResponse};
+use axum::{
+    extract::ws::Message::Text,
+    extract::ws::{Message, WebSocket},
+    extract::{Path, State, WebSocketUpgrade},
+    response::Response,
+};
 use common::queue::{Entry, QueueResult};
 use common::queue_tracker::QueueTracker;
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::error::Error;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::log::error;
 use tracing::{debug, info};
 use uuid::Uuid;
-
-#[derive(Serialize, Deserialize)]
-struct QueueJoinRequest {
-    id: Uuid,
-    players: Vec<Uuid>,
-    pub metadata: Map<String, Value>,
-}
 
 #[axum::debug_handler]
 pub async fn ws_upgrade(
@@ -49,12 +45,13 @@ pub async fn queue_join(
         .get_queue(&queue_name)
         .is_none()
     {
-        let _ = send_err(
+        let _ = send_socket(
             &mut sender,
-            None,
-            &format!("Queue '{queue_name}' does not exist"),
-        )
-        .await;
+            SocketResponse::Error(ErrorSocketResponse {
+                context: None,
+                error: format!("Queue '{}' not found", queue_name),
+            }),
+        );
         return;
     }
 
@@ -68,11 +65,20 @@ pub async fn queue_join(
         let Ok(join_request) = join_request else {
             let mut sender = sender_mutex.lock().await;
 
-            let _ = send_err(
+            // let _ = send_err(
+            //     &mut sender,
+            //     None,
+            //     "Failed to read join request: Invalid Json",
+            // );
+            let _ = send_socket(
                 &mut sender,
-                None,
-                "Failed to read join request: Invalid Json",
-            );
+                SocketResponse::Error(ErrorSocketResponse {
+                    context: None,
+                    error: "Failed to read join request: Invalid Json".to_string(),
+                }),
+            )
+            .await;
+
             continue;
         };
 
@@ -93,7 +99,15 @@ pub async fn queue_join(
             }
             Err(err) => {
                 let mut sender = sender_mutex.lock().await;
-                send_err(&mut sender, Some(&entry_id), &format!("Failed to join queue: {err}")).await;
+                let _ = send_socket(
+                    &mut sender,
+                    SocketResponse::Error(ErrorSocketResponse {
+                        context: Some(entry_id),
+                        error: format!("Failed to join queue: {err}"),
+                    }),
+                )
+                .await;
+
                 info!("Failed to join queue for request:. Error: {}", text);
                 continue;
             }
@@ -134,67 +148,79 @@ async fn on_join_request(
         .ok_or("Queue not found")?;
 
     let mut queue = queue.lock().await;
-    let entry = Entry::new(join_request.id, join_request.players, join_request.metadata);
+
+    let join_request_id = join_request.id;
+
+    let entry = Entry::new(
+        join_request_id.clone(),
+        join_request.players,
+        join_request.metadata,
+    );
     let entry_id = entry.id();
 
     let receiver = queue.join_queue(entry)?;
 
-    if queue.get_entry(&entry_id).is_some() {
-        return Err(String::from("Entry already exists with that id").into());
+    if let Some(existing) = queue.get_entry(&entry_id) {
+        println!("{:?} when searching for {}", existing, entry_id);
     }
 
     tokio::spawn(async move {
         let queue_result = receiver.await;
-        if let Ok(queue_result) = queue_result {
-            let mut sender = sender.lock().await;
 
-            match queue_result {
-                QueueResult::Success(teams, game) => {
-                    let response = json!({
-                        "status": "success",
-                        "teams": teams,
-                        "game": game,
-                    });
-                    let _ = sender.send(Text(response.to_string().into())).await;
-                }
-                QueueResult::Error(err) => {
-                    let response = json!({
-                        "status": "error",
-                        "message": err,
-                    });
-                    let _ = sender.send(Text(response.to_string().into())).await;
+        match queue_result {
+            Ok(queue_result) => {
+                let mut sender = sender.lock().await;
+
+                match queue_result {
+                    QueueResult::Success(teams, game) => {
+                        send_socket(
+                            &mut sender,
+                            SocketResponse::Success(SuccessSocketResponse { teams, game }),
+                        )
+                        .await;
+                    }
+                    QueueResult::Error(err) => {
+                        send_socket(
+                            &mut sender,
+                            SocketResponse::Error(ErrorSocketResponse {
+                                context: Some(join_request_id),
+                                error: err,
+                            }),
+                        )
+                        .await;
+                    }
                 }
             }
-        } else {
-            debug!("Failed to receive queue result for entry {}", entry_id);
+            Err(err) => {
+                println!("{:?}", err)
+            }
         }
+
+        // if let Ok(queue_result) = queue_result {
+
+        // } else {
+        //     debug!("Failed to receive queue result for entry {}", entry_id);
+        // }
     });
 
     Ok(entry_id)
     // queue tracker dropped
 }
 
-async fn send_err(sender: &mut SplitSink<WebSocket, Message>, entry_id: Option<&Uuid>, err: &str) {
-    match entry_id {
-        None => {
-            send_json(sender, &json!({"error": err})).await;
+async fn send_socket(sender: &mut SplitSink<WebSocket, Message>, socket_response: SocketResponse) {
+    match serde_json::to_string(&socket_response) {
+        Ok(json) => {
+            match sender.send(Text(json.into())).await {
+                Ok(_) => {}
+                Err(err) => {
+                    error!("Failed to send socket response: {}", err);
+                    return;
+                }
+            };
         }
-        Some(uuid) => {
-            send_json(sender, &json!({"error": err, "context": uuid.to_string()})).await;
+        Err(err) => {
+            error!("Failed to serialize socket response: {}", err);
+            return;
         }
-    }
-}
-
-async fn send_json<T>(sender: &mut SplitSink<WebSocket, Message>, json: &T)
-where
-    T: ?Sized + Serialize,
-{
-    match serde_json::to_string(&json) {
-        Ok(str) => {
-            let _ = sender.send(Text(str.into())).await;
-        }
-        Err(_) => {
-            error!("Failed to send json")
-        }
-    }
+    };
 }
