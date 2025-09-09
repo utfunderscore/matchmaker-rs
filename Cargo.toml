@@ -14,3 +14,7 @@ members = [
     "common",
     "http-api"
 ]
+
+[profile.profiling]
+inherits = "release"
+debug = true

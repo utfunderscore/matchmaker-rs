@@ -2,13 +2,14 @@ use crate::matchmaker::MatchmakerResult::{Matched, Skip};
 use crate::matchmaker::{Matchmaker, MatchmakerResult};
 use crate::queue::Entry;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::error::Error;
 use tracing::warn;
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct EloMatchmaker {
     scaling_factor: f32,
     #[serde(skip)]
@@ -18,13 +19,6 @@ pub struct EloMatchmaker {
 }
 
 impl EloMatchmaker {
-    fn new(scaling_factor: f32) -> EloMatchmaker {
-        EloMatchmaker {
-            scaling_factor,
-            elo_map: BTreeMap::new(),
-            entries: HashMap::new(),
-        }
-    }
 
     fn get_elo(entry: &Entry) -> Option<i64> {
         entry.metadata.get("elo").map(|v| v.as_i64()).flatten()
@@ -36,13 +30,8 @@ impl EloMatchmaker {
     }
 
     pub fn deserialize(value: Value) -> Result<Box<dyn Matchmaker + Send + Sync>, Box<dyn Error>> {
-        let scaling_factor_value = value.get("scalingFactor").ok_or(String::from("Missing scaling factor"))?;
-        let scaling_factor = scaling_factor_value.as_f64().ok_or(String::from("Scaling factor is an invalid type"))?;
-        if scaling_factor > f32::MAX as f64 {
-            return Err(String::from("Scaling factor is too high").into());
-        }
-
-        Ok(Box::new(EloMatchmaker::new(scaling_factor as f32)))
+        let matchmaker: EloMatchmaker = serde_json::from_value(value)?;
+        Ok(Box::new(matchmaker))
     }
 }
 
@@ -86,7 +75,7 @@ impl Matchmaker for EloMatchmaker {
     }
 
     fn serialize(&self) -> Result<Value, Box<dyn Error>> {
-        Ok(Value::default())
+        serde_json::to_value(self).map_err(|x| x.into())
     }
 
     fn remove_all(&mut self) -> Vec<Entry> {

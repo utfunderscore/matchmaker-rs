@@ -77,7 +77,7 @@ impl QueueTracker {
         let queue = Queue::new(matchmaker);
 
         queue.save(&name, &self.directory)?;
-        
+
         let queue_mutex = Arc::new(Mutex::new(queue));
 
         self.register_queue(name, queue_mutex)?;
@@ -100,6 +100,9 @@ impl QueueTracker {
             let name = name_clone;
 
             loop {
+                // Sleep for a short duration to avoid busy waiting
+                sleep(Duration::from_millis(100)).await;
+
                 let mut queue: MutexGuard<Queue> = task_queue.lock().await;
                 let result = queue.tick().await;
 
@@ -149,9 +152,6 @@ impl QueueTracker {
                         }
                     }
                 }
-
-                // Sleep for a short duration to avoid busy waiting
-                sleep(Duration::from_millis(100)).await;
             }
         });
 
@@ -181,6 +181,16 @@ impl QueueTracker {
 
     pub fn get_queues(&self) -> &HashMap<String, Arc<Mutex<Queue>>> {
         &self.queues
+    }
+
+    pub async fn get_queue_by_player(&self, player_id: &Uuid) -> Option<String> {
+        for (name, queue) in &self.queues {
+            let queue_guard = queue.lock().await;
+            if queue_guard.contains_player(player_id) {
+                return Some(name.clone());
+            }
+        }
+        None
     }
 
     pub async fn all_queues_empty(&self) -> bool {

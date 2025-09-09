@@ -1,4 +1,4 @@
-use crate::gamefinder::{Game};
+use crate::gamefinder::Game;
 use crate::matchmaker;
 use crate::matchmaker::{Matchmaker, MatchmakerResult};
 use serde::{Deserialize, Serialize};
@@ -22,15 +22,15 @@ pub struct Entry {
 }
 
 impl Entry {
-    pub fn new(players: Vec<Uuid>) -> Self {
+    pub fn new(id: Uuid, players: Vec<Uuid>, metadata: Map<String, Value>) -> Self {
         Entry {
-            id: Uuid::new_v4(),
+            id,
             players,
+            metadata,
             time_queued: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .expect("Time went backwards")
                 .as_secs(),
-            metadata: Map::new(),
         }
     }
 
@@ -83,6 +83,18 @@ impl Queue {
 
     pub fn get_entries(&self) -> Vec<&Entry> {
         self.matchmaker.get_entries()
+    }
+
+    pub fn get_entry(&self, id: &Uuid) -> Option<&Entry> {
+        self.get_entries()
+            .into_iter()
+            .find(|entry| entry.id() == *id)
+    }
+
+    pub fn contains_player(&self, player: &Uuid) -> bool {
+        self.get_entries()
+            .iter()
+            .any(|x| x.players.contains(player))
     }
 
     pub fn matchmaker(&self) -> &Box<dyn Matchmaker + Send + Sync> {

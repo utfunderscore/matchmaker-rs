@@ -1,5 +1,6 @@
 mod data;
 mod queue_routes;
+mod socket;
 
 use axum::Router;
 use axum::routing::{any, get, post};
@@ -39,7 +40,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             post(queue_routes::create_queue_route).get(queue_routes::get_queues_route),
         )
         .route("/api/v1/queue/{name}", get(queue_routes::get_queue))
-        .route("/api/v1/queue/{name}/join", any(queue_routes::ws_upgrade))
+        .route("/api/v1/queue/player/{id}", get(queue_routes::get_player_queue))
+        .route("/api/v1/queue/{name}/join", any(socket::ws_upgrade))
         .layer(TraceLayer::new_for_http())
         .with_state(queue_tracker);
 

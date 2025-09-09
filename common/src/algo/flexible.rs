@@ -8,6 +8,7 @@ use std::error::Error;
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct FlexibleMatchMaker {
     target_team_size: i16,
     min_entry_size: i16,
@@ -271,8 +272,8 @@ mod tests {
     fn test_matchmake_success() {
         let mut matchmaker = FlexibleMatchMaker::new(1, 1, 1, 2).unwrap();
 
-        let team1 = Entry::new(vec![Uuid::new_v4()]);
-        let team2 = Entry::new(vec![Uuid::new_v4()]);
+        let team1 = Entry::new(Uuid::new_v4(), vec![Uuid::new_v4()]);
+        let team2 = Entry::new(Uuid::new_v4(), vec![Uuid::new_v4()]);
 
         matchmaker.add_entry(team1).unwrap();
         matchmaker.add_entry(team2).unwrap();
@@ -286,7 +287,7 @@ mod tests {
     fn test_matchmake_not_enough_players() {
         let mut matchmaker = FlexibleMatchMaker::new(5, 1, 5, 2).unwrap();
 
-        let team1 = Entry::new(vec![Uuid::new_v4()]);
+        let team1 = Entry::new(Uuid::new_v4(), vec![Uuid::new_v4()]);
 
         matchmaker.add_entry(team1).unwrap();
 
