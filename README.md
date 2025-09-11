@@ -12,6 +12,20 @@ A scalable matchmaking system for video games, utilizing WebSockets for real-tim
 - HTTP API for queue operations
 - Benchmarking tools for performance analysis
 
+## Matchmakers
+### Elo
+A matchmaker that pairs players based on their proximity in skill level. Uses an expanding range to
+pair players over time. Max 2 teams
+
+**Settings**:
+- `team_size`: Number of players per team.
+- `scaling_factor`: Determines the max and min skill range for matching `scaling_factor * time_in_queue (in seconds)`.
+- `max_skill_diff`: Maximum allowable skill difference between players to be considered for a match.
+
+**Required metadata**
+- `elo`: Numerical representation of player skill (e.g., Elo rating).
+
+
 ## Project Structure
 
 - `common/` – Shared Rust library code for matchmaking logic
