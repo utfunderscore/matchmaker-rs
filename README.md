@@ -36,23 +36,17 @@ Designed for flexibility and performance, this project enables efficient player 
 A matchmaker that pairs players based on their proximity in skill level. Uses an expanding range to pair players over time.  
 **Max 2 teams**
 
-<details>
-<summary><strong>Settings</strong></summary>
-
+**Settings**
 ```yaml
 team_size:        # Number of players per team
 scaling_factor:   # Determines the max/min skill range for matching (scaling_factor * time_in_queue in seconds)
 max_skill_diff:   # Maximum allowable skill difference between players to be considered for a match
 ```
-</details>
 
-<details>
-<summary><strong>Required metadata</strong></summary>
-
+**Required metadata**
 ```yaml
 elo:              # Numerical representation of player skill (e.g., Elo rating)
 ```
-</details>
 
 ---
 
@@ -61,22 +55,17 @@ elo:              # Numerical representation of player skill (e.g., Elo rating)
 A matchmaker that forms teams of variable sizes to reach a target team size, allowing for flexible group compositions.  
 Supports multiple teams per match and can accommodate entries of different sizes within defined limits.
 
-<details>
-<summary><strong>Settings</strong></summary>
-
+**Settings**
 ```yaml
 target_team_size: # Desired number of players per team
 min_entry_size:   # Minimum allowed size for an entry (group)
 max_entry_size:   # Maximum allowed size for an entry (group)
 num_teams:        # Number of teams to form per match
 ```
-</details>
 
-<details>
-<summary><strong>Required metadata</strong></summary>
+**Required metadata**
 
 _None (entries are grouped by size; no specific player metadata required)._
-</details>
 
 ---
 
