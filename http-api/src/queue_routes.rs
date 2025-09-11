@@ -6,12 +6,9 @@ use common::queue::Queue;
 use common::queue_tracker::QueueTracker;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::collections::HashMap;
 use std::error::Error;
-use std::str::FromStr;
 use std::sync::Arc;
-use tokio::sync::{Mutex, MutexGuard};
-use uuid::Uuid;
+use tokio::sync::Mutex;
 
 #[derive(Serialize, Deserialize)]
 pub struct CreateQueueRequest {
@@ -40,14 +37,7 @@ pub async fn create_queue(
     registry: Arc<Mutex<QueueTracker>>,
     request: CreateQueueRequest,
 ) -> Result<(), Box<dyn Error>> {
-    let mut registry = registry.lock().await;
-
-    if registry.get_queue(&request.name).is_some() {
-        return Err(format!("Queue '{}' already exists", request.name).into());
-    }
-
-    registry.create_queue(request.name, request.matchmaker, request.settings)?;
-
+    QueueTracker::create(registry, request.name, request.matchmaker, request.settings).await?;
     Ok(())
 }
 
@@ -57,40 +47,16 @@ pub async fn get_queues_route(
 ) -> (StatusCode, Json<Value>) {
     let tracker = tracker.lock().await;
 
-    let queues: &HashMap<String, Arc<Mutex<Queue>>> = tracker.get_queues();
-    let mut mapped: Vec<QueueData> = Vec::with_capacity(queues.len());
+    let queues: Vec<&String> = tracker.get_queues().keys().collect();
+    let json = serde_json::to_value(&queues);
 
-    for (name, queue_mutex) in queues {
-        let queue = queue_mutex.lock().await;
-        let entries = queue.get_entries();
-        let matchmaker = queue.matchmaker().serialize();
-        let Ok(matchmaker) = matchmaker else {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(Value::String(String::from(
-                    "Failed to convert matchmaker to json",
-                ))),
-            );
-        };
-        let queue_data = QueueData::new(
-            name.clone(),
-            entries.into_iter().cloned().collect(),
-            matchmaker,
-        );
-
-        mapped.push(queue_data);
-    }
-
-    let Ok(queues) = serde_json::to_value(mapped) else {
-        return (
+    match json {
+        Ok(json) => (StatusCode::OK, Json(json)),
+        Err(err) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(Value::String(String::from(
-                "Error occurred converting to json.",
-            ))),
-        );
-    };
-
-    (StatusCode::OK, Json(queues))
+            Json(json!({"error": err.to_string()})),
+        ),
+    }
 }
 #[axum::debug_handler]
 pub async fn get_queue(
@@ -99,82 +65,40 @@ pub async fn get_queue(
 ) -> (StatusCode, String) {
     let registry = registry.lock().await;
 
-    let queue = registry.get_queue(&name);
+    let queue: Option<Arc<Mutex<Queue>>> = registry.get_queue(&name).await;
 
-    match queue {
-        Some(q) => {
-            let queue: MutexGuard<Queue> = q.lock().await;
-            let matchmaker_settings: Result<Value, Box<dyn Error>> = queue.matchmaker().serialize();
-            let Ok(matchmaker_settings) = matchmaker_settings else {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    String::from("Error occurred converting to json."),
-                );
-            };
-
-            let queue_data = QueueData::new(
-                name,
-                queue.get_entries().into_iter().cloned().collect(),
-                matchmaker_settings,
-            );
-            let response = serde_json::to_string(&queue_data);
-            match response {
-                Ok(json) => (StatusCode::OK, json),
-                Err(_) => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    String::from("Error occurred converting to json."),
-                ),
-            }
-        }
-        None => (StatusCode::NOT_FOUND, format!("Queue '{}' not found", name)),
-    }
-}
-
-#[axum::debug_handler]
-pub async fn get_player_queue(
-    registry: State<Arc<Mutex<QueueTracker>>>,
-    Path(player): Path<String>,
-) -> (StatusCode, String) {
-    let tracker = registry.lock().await;
-
-    let Ok(player) = Uuid::from_str(&player) else {
-        return (StatusCode::BAD_REQUEST, String::from("Invalid player id"));
+    let Some(queue) = queue else {
+        return (StatusCode::NOT_FOUND, String::from("Queue not found"));
     };
 
-    let Some(queue_name) = tracker.get_queue_by_player(&player).await else {
-        return (StatusCode::NOT_FOUND, String::from("Invalid player id"));
+    let queue = queue.lock().await;
+    let matchmaker = queue.matchmaker();
+
+    let Ok(matchmaker_settings) = matchmaker.serialize() else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            String::from("Error occurred converting to json."),
+        );
     };
 
-    let queue = tracker.get_queue(&queue_name);
+    let matchmaker = json!({
+        "type": matchmaker.get_type_name(),
+        "settings": matchmaker_settings
+    });
 
-    match queue {
-        Some(q) => {
-            let queue: MutexGuard<Queue> = q.lock().await;
-            let matchmaker_settings: Result<Value, Box<dyn Error>> = queue.matchmaker().serialize();
-            let Ok(matchmaker_settings) = matchmaker_settings else {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    String::from("Error occurred converting to json."),
-                );
-            };
+    let queue_data = QueueData::new(
+        name,
+        queue.entries().values().cloned().collect(),
+        matchmaker,
+    );
 
-            let queue_data = QueueData::new(
-                queue_name,
-                queue.get_entries().into_iter().cloned().collect(),
-                matchmaker_settings,
-            );
-            let response = serde_json::to_string(&queue_data);
-            match response {
-                Ok(json) => (StatusCode::OK, json),
-                Err(_) => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    String::from("Error occurred converting to json."),
-                ),
-            }
-        }
-        None => (
-            StatusCode::NOT_FOUND,
-            format!("Queue '{}' not found", queue_name),
-        ),
-    }
+    let queue_data_json = serde_json::to_string(&queue_data);
+    let Ok(queue_data) = queue_data_json else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            String::from("Error occurred converting to json."),
+        );
+    };
+
+    (StatusCode::OK, queue_data)
 }

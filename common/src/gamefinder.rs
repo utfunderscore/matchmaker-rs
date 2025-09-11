@@ -1,14 +1,15 @@
 use jsonpath_rust::JsonPath;
+use lazy_static::lazy_static;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::error::Error;
 use std::path::Path;
-use lazy_static::lazy_static;
 use tokio::{fs, io};
 use uuid::Uuid;
 
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Game {
     pub game_id: String,
     pub host: String,
@@ -21,6 +22,14 @@ impl Game {
             game_id,
             host,
             port,
+        }
+    }
+
+    pub fn demo() -> Game {
+        Game {
+            game_id: "demo-game-id".into(),
+            host: String::from(""),
+            port: 0,
         }
     }
 }
@@ -72,7 +81,6 @@ lazy_static! {
 }
 
 impl GameFinder {
-
     pub fn new(config: GameFinderConfig) -> GameFinder {
         GameFinder { config }
     }

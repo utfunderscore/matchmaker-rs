@@ -1,11 +1,11 @@
 use crate::matchmaker::MatchmakerResult::{Matched, Skip};
 use crate::matchmaker::{Matchmaker, MatchmakerResult};
-use crate::queue::Entry;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 use std::error::Error;
 use uuid::Uuid;
+use crate::entry::{Entry, EntryId};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -17,9 +17,9 @@ pub struct FlexibleMatchMaker {
     #[serde(skip)]
     valid_team_compositions: Vec<Vec<i16>>,
     #[serde(skip)]
-    teams_by_size: Vec<Vec<Uuid>>, // the index of the first array is the team size
+    teams_by_size: Vec<Vec<EntryId>>, // the index of the first array is the team size
     #[serde(skip)]
-    teams: HashMap<Uuid, Entry>,
+    teams: HashMap<EntryId, Entry>,
 }
 
 impl FlexibleMatchMaker {
@@ -64,7 +64,7 @@ impl Matchmaker for FlexibleMatchMaker {
             return Skip("Not enough players to form a match".to_string());
         }
 
-        let mut results: Vec<Vec<Uuid>> = Vec::new();
+        let mut results: Vec<Vec<EntryId>> = Vec::new();
 
         for _ in 0..self.num_teams {
             let composition = self.valid_team_compositions.iter().find(|sizes| {
@@ -82,7 +82,7 @@ impl Matchmaker for FlexibleMatchMaker {
 
             let mut index_tracker: Vec<usize> = Vec::new();
 
-            let mut picked: Vec<Uuid> = Vec::with_capacity(sizes.len());
+            let mut picked: Vec<EntryId> = Vec::with_capacity(sizes.len());
             for &sz in sizes {
                 // unwrap is safe because we checked availability above
                 let queue = self.teams_by_size.get(sz as usize).unwrap();
@@ -118,9 +118,9 @@ impl Matchmaker for FlexibleMatchMaker {
         self.teams.values().collect()
     }
 
-    fn remove_entry(&mut self, entry_id: &Uuid) -> Result<Entry, Box<dyn Error>> {
+    fn remove_entry(&mut self, entry_id: &EntryId) -> Result<Entry, Box<dyn Error>> {
         let entry = self.teams.remove(entry_id).ok_or("Entry not found")?;
-        let size = entry.entries().len();
+        let size = entry.players.len();
 
         let teams = self.teams_by_size.get_mut(size).unwrap();
         teams.retain(|id| id != entry_id);
@@ -128,41 +128,41 @@ impl Matchmaker for FlexibleMatchMaker {
         Ok(entry)
     }
 
-    fn get_entry(&self, entry_id: &Uuid) -> Option<&Entry> {
+    fn get_entry(&self, entry_id: &EntryId) -> Option<&Entry> {
         self.teams.get(entry_id)
     }
 
     fn add_entry(&mut self, entry: Entry) -> Result<(), Box<dyn Error>> {
-        if entry.entries().len() < self.min_entry_size as usize {
+        if entry.players.len() < self.min_entry_size as usize {
             return Err(format!(
                 "Entry size {} is less than minimum required size {}",
-                entry.entries().len(),
+                entry.players.len(),
                 self.min_entry_size
             )
             .into());
         }
 
-        if entry.entries().len() > self.max_entry_size as usize {
+        if entry.players.len() > self.max_entry_size as usize {
             return Err(format!(
                 "Entry size {} exceeds maximum allowed size {}",
-                entry.entries().len(),
+                entry.players.len(),
                 self.max_entry_size
             )
             .into());
         }
 
-        let size = entry.entries().len();
+        let size = entry.players.len();
 
         match self.teams_by_size.get_mut(size) {
             None => {
-                self.teams_by_size.push(vec![entry.id()]);
+                self.teams_by_size.push(vec![entry.id]);
             }
             Some(teams) => {
-                teams.push(entry.id());
+                teams.push(entry.id);
             }
         }
 
-        self.teams.insert(entry.id(), entry);
+        self.teams.insert(entry.id, entry);
 
         Ok(())
     }
@@ -222,6 +222,7 @@ pub fn find_unique_addends(target: i16) -> Result<Vec<Vec<i16>>, String> {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::Map;
     use super::*;
     use tracing::debug;
 
@@ -272,8 +273,8 @@ mod tests {
     fn test_matchmake_success() {
         let mut matchmaker = FlexibleMatchMaker::new(1, 1, 1, 2).unwrap();
 
-        let team1 = Entry::new(Uuid::new_v4(), vec![Uuid::new_v4()]);
-        let team2 = Entry::new(Uuid::new_v4(), vec![Uuid::new_v4()]);
+        let team1 = Entry::new(Uuid::new_v4(), vec![Uuid::new_v4()], Map::new());
+        let team2 = Entry::new(Uuid::new_v4(), vec![Uuid::new_v4()], Map::new());
 
         matchmaker.add_entry(team1).unwrap();
         matchmaker.add_entry(team2).unwrap();
@@ -287,7 +288,7 @@ mod tests {
     fn test_matchmake_not_enough_players() {
         let mut matchmaker = FlexibleMatchMaker::new(5, 1, 5, 2).unwrap();
 
-        let team1 = Entry::new(Uuid::new_v4(), vec![Uuid::new_v4()]);
+        let team1 = Entry::new(Uuid::new_v4(), vec![Uuid::new_v4()], Map::new());
 
         matchmaker.add_entry(team1).unwrap();
 

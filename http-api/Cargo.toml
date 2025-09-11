@@ -7,10 +7,14 @@ edition = "2024"
 axum = { version = "0.8.4", features=["macros", "default", "ws"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
-tokio = { version = "1.45.1", features = ["full"] }
+tokio = { version = "1.45.1", features = ["full", "tracing"] }
 tracing = { version = "0.1.41", features = ["std", "log"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 common = { path = "../common" }
 futures-util = "0.3.31"
 uuid = { version = "1.17.0", features = ["v4", "serde"] }
 tower-http = { version = "0.6.6", features = ["trace"] }
+console-subscriber = "0.4.1"
+
+[build]
+rustflags = ["--cfg", "tokio_unstable"]

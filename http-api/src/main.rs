@@ -21,15 +21,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .init();
-    
+
     info!("Loading config...");
+
 
     let game_finder_config = GameFinderConfig::load_or_create_config("config.toml").await?;
 
     let game_finder = Arc::new(Mutex::new(GameFinder::new(game_finder_config)));
 
     info!("Initializing queue tracker...");
-    let queue_tracker = Arc::new(Mutex::new(QueueTracker::new("./queues", game_finder)?));
+    let queue_tracker = Arc::new(Mutex::new(QueueTracker::new()));
     let queue_tracker_clone = queue_tracker.clone();
 
     info!("Loaded all queues...");
@@ -40,7 +41,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             post(queue_routes::create_queue_route).get(queue_routes::get_queues_route),
         )
         .route("/api/v1/queue/{name}", get(queue_routes::get_queue))
-        .route("/api/v1/queue/player/{id}", get(queue_routes::get_player_queue))
         .route("/api/v1/queue/{name}/join", any(socket::ws_upgrade))
         .layer(TraceLayer::new_for_http())
         .with_state(queue_tracker);
@@ -48,12 +48,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let listener = TcpListener::bind("[::]:8080").await?;
     info!("Listening on: {}", listener.local_addr()?);
 
-    
+
     // Set up graceful shutdown on SIGTERM
     let shutdown_signal = async move {
         let mut sigterm = signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");
         sigterm.recv().await;
         info!("SIGTERM received, waiting for all queues to become empty...");
+
         loop {
             let all_empty = {
                 let tracker = queue_tracker_clone.lock().await;

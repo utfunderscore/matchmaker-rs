@@ -1,21 +1,22 @@
 use crate::matchmaker::MatchmakerResult::{Matched, Skip};
 use crate::matchmaker::{Matchmaker, MatchmakerResult};
-use crate::queue::Entry;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::error::Error;
+use std::ops::Sub;
 use tracing::warn;
 use uuid::Uuid;
+use crate::entry::{Entry, EntryId};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct EloMatchmaker {
-    scaling_factor: f32,
+    scaling_factor: f64,
     #[serde(skip)]
-    elo_map: BTreeMap<i64, HashSet<Uuid>>,
+    elo_map: BTreeMap<i64, HashSet<EntryId>>,
     #[serde(skip)]
-    entries: HashMap<Uuid, Entry>,
+    entries: HashMap<EntryId, Entry>,
 }
 
 impl EloMatchmaker {
@@ -24,9 +25,14 @@ impl EloMatchmaker {
         entry.metadata.get("elo").map(|v| v.as_i64()).flatten()
     }
 
-    fn get_elo_range(&self, queue_time: u64, elo: i64) -> (i64, i64) {
-        let incr = (queue_time as f32 * self.scaling_factor) as i64;
-        (elo - incr, elo + incr)
+    fn get_elo_range(&self, entry: &Entry) -> Result<(i64, i64), &'static str> {
+        let elo = entry.metadata.get("elo").map(|v| v.as_i64()).flatten().ok_or("Entry has no elo")?;
+
+        // time since queued in seconds
+        let duration = chrono::Utc::now().sub(entry.time_queued).as_seconds_f64();
+
+        let incr = (duration * self.scaling_factor) as i64;
+        Ok((elo - incr, elo + incr))
     }
 
     pub fn deserialize(value: Value) -> Result<Box<dyn Matchmaker + Send + Sync>, Box<dyn Error>> {
@@ -44,14 +50,18 @@ impl Matchmaker for EloMatchmaker {
         for (id, entry) in &self.entries {
             let elo_opt = Self::get_elo(entry);
             if let None = elo_opt {
-                warn!("Entry {} has no elo, which should never happen", id);
+                warn!("Entry {:?} has no elo, which should never happen", id);
                 continue;
             }
             let elo = elo_opt.unwrap();
-            let (lower, upper) = self.get_elo_range(entry.time_queued, elo);
+            let Ok((lower, upper)) = self.get_elo_range(entry) else {
+                warn!("Entry {:?} has no elo range, which should never happen", id);
+                continue;
+            };
+
             let nearby = self.elo_map.range(lower..=upper);
 
-            let mut closest_candidate: Option<Uuid> = None;
+            let mut closest_candidate: Option<EntryId> = None;
             let mut min_diff = i64::MAX;
 
             for (&nearby_elo, ids) in nearby {
@@ -87,7 +97,7 @@ impl Matchmaker for EloMatchmaker {
         self.entries.values().collect()
     }
 
-    fn remove_entry(&mut self, entry_id: &Uuid) -> Result<Entry, Box<dyn Error>> {
+    fn remove_entry(&mut self, entry_id: &EntryId) -> Result<Entry, Box<dyn Error>> {
         let entry = self.entries.remove(entry_id).ok_or("Entry not found")?;
         let elo = EloMatchmaker::get_elo(&entry).ok_or("Entry has no elo")?;
 
@@ -97,14 +107,14 @@ impl Matchmaker for EloMatchmaker {
         Ok(entry)
     }
 
-    fn get_entry(&self, entry_id: &Uuid) -> Option<&Entry> {
+    fn get_entry(&self, entry_id: &EntryId) -> Option<&Entry> {
         self.entries.get(entry_id)
     }
 
     fn add_entry(&mut self, entry: Entry) -> Result<(), Box<dyn Error>> {
         let elo = Self::get_elo(&entry).ok_or("Entry has no elo")?;
 
-        let id = entry.id();
+        let id = entry.id;
         self.entries.insert(id, entry);
         self.elo_map.entry(elo).or_default().insert(id);
 
