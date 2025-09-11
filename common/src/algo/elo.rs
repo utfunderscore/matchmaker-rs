@@ -6,7 +6,6 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::error::Error;
 use std::ops::Sub;
 use tracing::warn;
-use uuid::Uuid;
 use crate::entry::{Entry, EntryId};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

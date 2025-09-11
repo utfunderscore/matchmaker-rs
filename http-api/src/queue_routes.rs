@@ -17,6 +17,27 @@ pub struct CreateQueueRequest {
     settings: Value,
 }
 
+/// Creates a new queue.
+///
+/// **Request:**
+/// - Method: `POST`
+/// - Path: `/queues`
+/// - Body: JSON object with fields:
+///   - `name` (String): Name of the queue.
+///   - `matchmaker` (String): Matchmaker type.
+///   - `settings` (serde_json::Value): Matchmaker settings.
+/// - Example:
+///   {
+///     "name": "queue1",
+///     "matchmaker": "default",
+///     "settings": { ... }
+///   }
+///
+/// **Response:**
+/// - `201 Created`: Queue created successfully.
+///   - Body: `{ "status": "Queue created successfully" }`
+/// - `400 Bad Request`: Error creating queue.
+///   - Body: Error message string.
 #[axum::debug_handler]
 pub async fn create_queue_route(
     queue_tracker: State<Arc<Mutex<QueueTracker>>>,
@@ -24,7 +45,7 @@ pub async fn create_queue_route(
 ) -> (StatusCode, Json<Value>) {
     let queue_tracker = queue_tracker.0;
 
-    match create_queue(queue_tracker, request.0).await {
+    match QueueTracker::create(queue_tracker, request.name.clone(), request.matchmaker.clone(), request.settings.clone()).await {
         Ok(_) => (
             StatusCode::CREATED,
             Json(json!({"status": "Queue created successfully"})),
@@ -33,14 +54,17 @@ pub async fn create_queue_route(
     }
 }
 
-pub async fn create_queue(
-    registry: Arc<Mutex<QueueTracker>>,
-    request: CreateQueueRequest,
-) -> Result<(), Box<dyn Error>> {
-    QueueTracker::create(registry, request.name, request.matchmaker, request.settings).await?;
-    Ok(())
-}
-
+/// Lists all queue names.
+///
+/// **Request:**
+/// - Method: `GET`
+/// - Path: `/queues`
+///
+/// **Response:**
+/// - `200 OK`: Returns a JSON array of queue names.
+///   - Body: `[ "queue1", "queue2", ... ]`
+/// - `500 Internal Server Error`: Error serializing queue list.
+///   - Body: `{ "error": "..." }`
 #[axum::debug_handler]
 pub async fn get_queues_route(
     tracker: State<Arc<Mutex<QueueTracker>>>,
@@ -58,6 +82,21 @@ pub async fn get_queues_route(
         ),
     }
 }
+
+/// Gets detailed information about a specific queue.
+///
+/// **Request:**
+/// - Method: `GET`
+/// - Path: `/queues/{name}`
+/// - Path parameter: `name` (String): Name of the queue.
+///
+/// **Response:**
+/// - `200 OK`: Returns queue data as JSON string.
+///   - Body: JSON string with queue details (see `QueueData` struct).
+/// - `404 Not Found`: Queue not found.
+///   - Body: `"Queue not found"`
+/// - `500 Internal Server Error`: Error serializing queue data.
+///   - Body: `"Error occurred converting to json."`
 #[axum::debug_handler]
 pub async fn get_queue(
     registry: State<Arc<Mutex<QueueTracker>>>,
