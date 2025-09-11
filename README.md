@@ -1,45 +1,94 @@
 <p align="center">
-  <img src="logo.png" alt="Matchmaker Logo" width="500"/>
+  <img src="logo.png" alt="Matchmaker Logo" width="320"/>
 </p>
 
-A scalable matchmaking system for video games, utilizing WebSockets for real-time state tracking and notifications. Designed for flexibility and performance, this project enables efficient player queue management and match creation.
+<p align="center">
+  <a href="https://github.com/your-org/matchmaker-rs">
+    <img src="https://img.shields.io/badge/language-Rust-orange?style=flat-square" alt="Rust">
+    <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT License">
+    <img src="https://img.shields.io/badge/build-passing-brightgreen?style=flat-square" alt="Build Status">
+  </a>
+</p>
 
-## Features
+---
 
-- Real-time matchmaking via WebSockets
-- Flexible queue and match management
-- Modular Rust backend
-- HTTP API for queue operations
-- Benchmarking tools for performance analysis
+# 🎮 Matchmaker RS
 
-## Matchmakers
-### Elo
-A matchmaker that pairs players based on their proximity in skill level. Uses an expanding range to
-pair players over time. Max 2 teams
+A **scalable matchmaking system** for video games, utilizing **WebSockets** for real-time state tracking and notifications.  
+Designed for flexibility and performance, this project enables efficient player queue management and match creation.
 
-**Settings**:
-- `team_size`: Number of players per team.
-- `scaling_factor`: Determines the max and min skill range for matching `scaling_factor * time_in_queue (in seconds)`.
-- `max_skill_diff`: Maximum allowable skill difference between players to be considered for a match.
+---
+
+## ✨ Features
+
+- ⚡ **Real-time matchmaking** via WebSockets
+- 🔄 Flexible queue and match management
+- 🦀 Modular Rust backend
+- 🌐 HTTP API for queue operations
+- 📊 Benchmarking tools for performance analysis
+
+---
+
+## 🧩 Matchmakers
+
+### 🏅 Elo
+
+A matchmaker that pairs players based on their proximity in skill level. Uses an expanding range to pair players over time.  
+**Max 2 teams**
+
+**Settings**
+```yaml
+team_size:        # Number of players per team
+scaling_factor:   # Determines the max/min skill range for matching (scaling_factor * time_in_queue in seconds)
+max_skill_diff:   # Maximum allowable skill difference between players to be considered for a match
+```
 
 **Required metadata**
-- `elo`: Numerical representation of player skill (e.g., Elo rating).
+```yaml
+elo:              # Numerical representation of player skill (e.g., Elo rating)
+```
 
+---
 
-## Project Structure
+### 🧩 Flexible
 
-- `common/` – Shared Rust library code for matchmaking logic
-- `http-api/` – Rust HTTP API server for queue and match operations
-- `benchmark/` – Python benchmarking scripts and tools
-- `bruno/` – API testing scripts (Bruno)
+A matchmaker that forms teams of variable sizes to reach a target team size, allowing for flexible group compositions.  
+Supports multiple teams per match and can accommodate entries of different sizes within defined limits.
 
-## Prerequisites
+**Settings**
+```yaml
+target_team_size: # Desired number of players per team
+min_entry_size:   # Minimum allowed size for an entry (group)
+max_entry_size:   # Maximum allowed size for an entry (group)
+num_teams:        # Number of teams to form per match
+```
 
-- Rust (latest stable, recommended via [rustup](https://rustup.rs/))
-- [uv](https://docs.astral.sh/uv/) (for Python dependency management)
-- (Optional) [Bruno](https://www.usebruno.com/) for API testing
+**Required metadata**
 
-## Build & Run (Rust Backend)
+_None (entries are grouped by size; no specific player metadata required)._
+
+---
+
+## 📁 Project Structure
+
+| Folder      | Description                                      |
+|-------------|--------------------------------------------------|
+| `common/`   | Shared Rust library code for matchmaking logic   |
+| `http-api/` | Rust HTTP API server for queue/match operations  |
+| `benchmark/`| Python benchmarking scripts and tools            |
+| `bruno/`    | API testing scripts (Bruno)                      |
+
+---
+
+## 🚀 Prerequisites
+
+- 🦀 Rust (latest stable, recommended via [rustup](https://rustup.rs/))
+- 🐍 [uv](https://docs.astral.sh/uv/) (for Python dependency management)
+- 🧪 (Optional) [Bruno](https://www.usebruno.com/) for API testing
+
+---
+
+## 🛠️ Build & Run (Rust Backend)
 
 1. **Clone the repository:**
    ```sh
@@ -57,10 +106,11 @@ pair players over time. Max 2 teams
    cd http-api
    cargo run --release
    ```
-
    The server will start and listen for HTTP/WebSocket connections.
 
-## Benchmarking
+---
+
+## 📈 Benchmarking
 
 1. **Install Python dependencies:**
    ```sh
@@ -73,11 +123,15 @@ pair players over time. Max 2 teams
    uv run main.py
    ```
 
-## Contributing
+---
 
-Contributions are welcome! Please open issues or pull requests for bug fixes, features, or improvements.
+## 🤝 Contributing
 
-## License
+Contributions are welcome!  
+Please open issues or pull requests for bug fixes, features, or improvements.
+
+---
+
+## 📄 License
 
 This project is licensed under the MIT License.
-
