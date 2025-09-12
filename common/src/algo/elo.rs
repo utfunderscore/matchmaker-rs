@@ -12,6 +12,8 @@ use crate::entry::{Entry, EntryId};
 #[serde(rename_all = "camelCase")]
 pub struct EloMatchmaker {
     scaling_factor: f64,
+    team_size: i64,
+    max_skill_diff: i64,
     #[serde(skip)]
     elo_map: BTreeMap<i64, HashSet<EntryId>>,
     #[serde(skip)]
@@ -70,6 +72,10 @@ impl Matchmaker for EloMatchmaker {
                     }
 
                     let diff = (nearby_elo - elo).abs();
+                    if diff > self.max_skill_diff {
+                        continue; // Skip if difference is too high
+                    }
+
                     if diff < min_diff {
                         min_diff = diff;
                         closest_candidate = Some(candidate_id);
@@ -111,6 +117,9 @@ impl Matchmaker for EloMatchmaker {
     }
 
     fn add_entry(&mut self, entry: Entry) -> Result<(), Box<dyn Error>> {
+        if entry.players.len() != self.team_size as usize {
+            return Err("Entry has wrong team size".into());
+        }
         let elo = Self::get_elo(&entry).ok_or("Entry has no elo")?;
 
         let id = entry.id;

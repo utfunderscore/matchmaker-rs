@@ -45,7 +45,7 @@ pub async fn create_queue_route(
 ) -> (StatusCode, Json<Value>) {
     let queue_tracker = queue_tracker.0;
 
-    match QueueTracker::create(queue_tracker, request.name.clone(), request.matchmaker.clone(), request.settings.clone()).await {
+    match QueueTracker::create(queue_tracker, request.name.clone(), request.matchmaker.clone(), request.settings.clone(), true).await {
         Ok(_) => (
             StatusCode::CREATED,
             Json(json!({"status": "Queue created successfully"})),

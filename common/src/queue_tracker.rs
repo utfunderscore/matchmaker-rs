@@ -28,6 +28,73 @@ impl QueueTracker {
         }
     }
 
+    pub async fn from_file() -> Arc<Mutex<Self>> {
+
+        let tracker = Arc::new(Mutex::new(Self::new()));
+
+        let data = tokio::fs::read_to_string("queues.json").await;
+        let Ok(data) = data else {
+            info!("No queues.json file found, starting with empty QueueTracker");
+            return tracker;
+        };
+        let Ok(queues_json) = serde_json::from_str::<Vec<Value>>(&data) else {
+            warn!("Failed to parse queues.json, starting with empty QueueTracker");
+            return tracker;
+        };
+
+        for value in queues_json {
+            let Some(name) = value.get("name").and_then(|v| v.as_str()).map(|x| String::from(x)) else {
+                warn!("Queue in queues.json has no name, skipping");
+                continue;
+            };
+            let Some(matchmaker_id) = value.get("matchmaker").and_then(|v| v.as_str()).map(|x| String::from(x)) else {
+                warn!("Queue {} in queues.json has no matchmaker, skipping", name);
+                continue;
+            };
+            let Some(settings) = value.get("settings") else {
+                warn!("Queue {} in queues.json has no settings, skipping", name);
+                continue;
+            };
+
+            let Ok(matchmaker) = matchmaker::deserialize(matchmaker_id.clone(), settings.clone()) else {
+                warn!("Failed to deserialize matchmaker for queue {}, skipping", name);
+                continue;
+            };
+            if Self::create(tracker.clone(), name.clone(), matchmaker_id, settings.clone(), false).await.is_ok() {
+                info!("Loaded queue {} from file", name);
+            } else {
+                warn!("Failed to create queue {} from file", name);
+            }
+
+        }
+        tracker
+    }
+
+    pub async fn save_to_file(&self) {
+        let mut queues: Vec<Value> = Vec::new();
+
+        for (name, queue_mutex) in &self.queues {
+            let queue = queue_mutex.lock().await;
+            let matchmaker = queue.matchmaker();
+            let matchmaker_type = matchmaker.get_type_name();
+            let Ok(settings) = matchmaker.serialize() else {
+                warn!("Failed to serialize matchmaker for queue {}", name);
+                continue;
+            };
+
+            let queue_json = serde_json::json!({
+                "name": name,
+                "matchmaker": matchmaker_type,
+                "settings": settings,
+            });
+            queues.push(queue_json);
+        }
+
+        if let Err(e) = std::fs::write("queues.json", serde_json::to_string_pretty(&queues).unwrap()) {
+            warn!("Failed to write queues to file: {}", e);
+        }
+    }
+
     pub async fn lock(&mut self) {
         self.locked = true;
     }
@@ -37,6 +104,7 @@ impl QueueTracker {
         name: String,
         matchmaker_id: String,
         settings: Value,
+        save: bool
     ) -> Result<(), Box<dyn Error>> {
 
         let tracker_copy = tracker.clone();
@@ -53,6 +121,10 @@ impl QueueTracker {
             .insert(queue_id, queue_ref.clone());
 
         Self::start_task(tracker, queue_ref);
+
+        if save {
+            tracker_guard.save_to_file().await;
+        }
 
         Ok(())
     }

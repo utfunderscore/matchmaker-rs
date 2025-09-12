@@ -30,7 +30,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let game_finder = Arc::new(Mutex::new(GameFinder::new(game_finder_config)));
 
     info!("Initializing queue tracker...");
-    let queue_tracker = Arc::new(Mutex::new(QueueTracker::new()));
+    let queue_tracker = QueueTracker::from_file().await;
     let queue_tracker_clone = queue_tracker.clone();
 
     info!("Loaded all queues...");
@@ -49,15 +49,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
     info!("Listening on: {}", listener.local_addr()?);
 
 
-    // Set up graceful shutdown on SIGTERM
+   // Set up graceful shutdown on SIGTERM and SIGINT
     let shutdown_signal = async move {
         let mut sigterm = signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");
-        sigterm.recv().await;
-        info!("SIGTERM received, waiting for all queues to become empty...");
+        let mut sigint = signal(SignalKind::interrupt()).expect("Failed to install SIGINT handler");
+
+        tokio::select! {
+            _ = sigterm.recv() => {
+                info!("SIGTERM received, waiting for all queues to become empty...");
+            }
+            _ = sigint.recv() => {
+                info!("SIGINT received, waiting for all queues to become empty...");
+            }
+        }
 
         loop {
+            let tracker = queue_tracker_clone.lock().await;
             let all_empty = {
-                let tracker = queue_tracker_clone.lock().await;
                 tracker.all_queues_empty().await
             };
             if all_empty {
@@ -65,6 +73,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 break;
             }
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+            tracker.save_to_file().await;
         }
     };
 

@@ -39,7 +39,7 @@ A matchmaker that pairs players based on their proximity in skill level. Uses an
 **Settings**
 ```yaml
 team_size:        # Number of players per team
-scaling_factor:   # Determines the max/min skill range for matching (scaling_factor * time_in_queue in seconds)
+scaling_factor:   # The rate at which the range expands over time (scaling_factor * time_in_queue in seconds)
 max_skill_diff:   # Maximum allowable skill difference between players to be considered for a match
 ```
 
