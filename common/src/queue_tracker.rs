@@ -9,7 +9,6 @@ use std::sync::Arc;
 use tokio::sync::oneshot::{Receiver, Sender};
 use tokio::sync::{Mutex, MutexGuard};
 use tracing::{info, warn};
-use uuid::Uuid;
 use crate::queue::{Queue, QueueResult};
 
 

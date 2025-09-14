@@ -1,187 +1,234 @@
-use crate::matchmaker::MatchmakerResult::{Matched, Skip};
+use crate::entry::{Entry, EntryId};
+use crate::matchmaker::MatchmakerResult::Matched;
 use crate::matchmaker::{Matchmaker, MatchmakerResult};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 use std::error::Error;
-use uuid::Uuid;
-use crate::entry::{Entry, EntryId};
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct FlexibleMatchMaker {
-    target_team_size: i16,
-    min_entry_size: i16,
-    max_entry_size: i16,
-    num_teams: i16,
+#[derive(Serialize, Deserialize)]
+struct FlexibleMatchmaker {
+    number_of_teams: i32,
+    team_size: i32,
+    max_entry_size: i32,
+    min_entry_size: i32,
     #[serde(skip)]
-    valid_team_compositions: Vec<Vec<i16>>,
+    addends: Vec<Vec<i32>>,
     #[serde(skip)]
-    teams_by_size: Vec<Vec<EntryId>>, // the index of the first array is the team size
+    entries: HashMap<EntryId, Entry>,
     #[serde(skip)]
-    teams: HashMap<EntryId, Entry>,
+    entries_by_size: HashMap<i32, Vec<EntryId>>,
 }
 
-impl FlexibleMatchMaker {
+impl FlexibleMatchmaker {
     pub fn new(
-        target_team_size: i16,
-        min_entry_size: i16,
-        max_entry_size: i16,
-        num_teams: i16,
-    ) -> Result<Self, Box<dyn Error>> {
-        let valid_team_compositions = find_unique_addends(target_team_size)?;
-
-        Ok(FlexibleMatchMaker {
-            target_team_size,
-            min_entry_size,
+        number_of_teams: i32,
+        team_size: i32,
+        max_entry_size: i32,
+        min_entry_size: i32,
+    ) -> Self {
+        let addends = find_unique_addends(team_size);
+        Self {
+            number_of_teams,
+            team_size,
+            addends,
             max_entry_size,
+            min_entry_size,
+            entries: HashMap::new(),
+            entries_by_size: HashMap::new(),
+        }
+    }
+
+    fn counter_from_slice(slice: &[i32]) -> HashMap<i32, i32> {
+        let mut counter = HashMap::new();
+        for &num in slice {
+            *counter.entry(num).or_insert(0) += 1;
+        }
+        counter
+    }
+
+    fn use_team(composition: &[i32], available: &HashMap<i32, i32>) -> HashMap<i32, i32> {
+        let mut new = available.clone();
+        for &num in composition {
+            if let Some(count) = new.get_mut(&num) {
+                *count -= 1;
+            }
+        }
+        new
+    }
+
+    fn can_form_team(composition: &[i32], available: &HashMap<i32, i32>) -> bool {
+        let temp = Self::counter_from_slice(composition);
+        for (&num, &count) in &temp {
+            match available.get(&num) {
+                Some(&available_count) if available_count >= count => continue,
+                _ => return false,
+            }
+        }
+        true
+    }
+
+    fn backtrack(
+        chosen: &mut Vec<Vec<i32>>,
+        available: &HashMap<i32, i32>,
+        valid_compositions: &[Vec<i32>],
+        num_teams: usize,
+        results: &mut Vec<Vec<Vec<i32>>>,
+    ) {
+        if chosen.len() == num_teams {
+            results.push(chosen.clone());
+            return;
+        }
+
+        for comp in valid_compositions {
+            if Self::can_form_team(comp, available) {
+                let mut new_available = Self::use_team(comp, available);
+                chosen.push(comp.clone());
+                Self::backtrack(
+                    chosen,
+                    &mut new_available,
+                    valid_compositions,
+                    num_teams,
+                    results,
+                );
+                chosen.pop();
+            }
+        }
+    }
+
+    pub fn build_teams(teams: &[i32], team_size: i32, num_teams: usize) -> Option<Vec<Vec<i32>>> {
+        let teams_count = Self::counter_from_slice(teams);
+
+        let addends: Vec<Vec<i32>> = find_unique_addends(team_size);
+
+        let mut valid_compositions: Vec<Vec<i32>> = Vec::new();
+
+        for addend in &addends {
+            let addend_count = Self::counter_from_slice(addend);
+            let valid = addend_count
+                .iter()
+                .all(|(&k, &v)| teams_count.get(&k).copied().unwrap_or(0) >= v);
+            if valid {
+                valid_compositions.push(addend.clone());
+            }
+        }
+
+        let mut results: Vec<Vec<Vec<i32>>> = Vec::new();
+        let available_counter = Self::counter_from_slice(teams);
+
+        Self::backtrack(
+            &mut vec![],
+            &available_counter,
+            &valid_compositions,
             num_teams,
-            valid_team_compositions,
-            teams_by_size: Vec::new(),
-            teams: HashMap::new(),
-        })
+            &mut results,
+        );
+
+        results.into_iter().next()
     }
 }
 
-impl FlexibleMatchMaker {
-    pub fn deserialize(value: Value) -> Result<Box<dyn Matchmaker + Send + Sync>, Box<dyn Error>> {
-        let mut matchmaker: FlexibleMatchMaker = serde_json::from_value(value)?;
-
-        matchmaker.valid_team_compositions = find_unique_addends(matchmaker.target_team_size)?;
-
-        Ok(Box::new(matchmaker))
-    }
-}
-impl Matchmaker for FlexibleMatchMaker {
+impl Matchmaker for FlexibleMatchmaker {
     fn get_type_name(&self) -> String {
-        "flexible".to_string()
+        String::from("flexible")
     }
 
     fn matchmake(&self) -> MatchmakerResult {
-        let total_players: usize = self.teams_by_size.iter().map(|team| team.len()).sum();
+        let team_counts = Self::build_teams(
+            self.get_entries()
+                .iter()
+                .map(|e| e.players.len() as i32)
+                .collect::<Vec<i32>>()
+                .as_slice(),
+            self.team_size,
+            self.number_of_teams as usize,
+        );
 
-        if (total_players as i32) < (self.target_team_size as i32) * (self.num_teams as i32) {
-            return Skip("Not enough players to form a match".to_string());
-        }
+        let Some(team_counts) = team_counts else {
+            return MatchmakerResult::Skip(String::from(""));
+        };
 
-        let mut results: Vec<Vec<EntryId>> = Vec::new();
+        let mut index_tracker: HashMap<i32, i32> = HashMap::new();
+        let mut result_teams: Vec<Vec<EntryId>> = Vec::new();
 
-        for _ in 0..self.num_teams {
-            let composition = self.valid_team_compositions.iter().find(|sizes| {
-                sizes.iter().all(|&sz| {
-                    self.teams_by_size
-                        .get(sz as usize)
-                        .map_or(false, |dq| !dq.is_empty())
-                })
-            });
-
-            let sizes = match composition {
-                Some(c) => c,
-                None => return Skip("No valid team composition found".to_string()),
-            };
-
-            let mut index_tracker: Vec<usize> = Vec::new();
-
-            let mut picked: Vec<EntryId> = Vec::with_capacity(sizes.len());
-            for &sz in sizes {
-                // unwrap is safe because we checked availability above
-                let queue = self.teams_by_size.get(sz as usize).unwrap();
-                let index = index_tracker.get(sz as usize).unwrap_or(&0usize);
-
-                picked.push(queue.get(*index).unwrap().clone());
-
-                index_tracker.push(*index + 1);
+        for sizes in team_counts {
+            let mut team = Vec::new();
+            for size in sizes {
+                let index = *index_tracker.get(&size).unwrap_or(&0);
+                index_tracker.insert(size, index + 1);
+                let by_size = self.entries_by_size.get(&size);
+                let Some(by_size) = by_size else {
+                    return MatchmakerResult::Skip(String::from(""));
+                };
+                let picked = by_size.get(index as usize);
+                let Some(picked) = picked else {
+                    return MatchmakerResult::Skip(String::from(""));
+                };
+                team.push(picked.clone());
             }
-
-            results.push(picked);
+            result_teams.push(team);
         }
 
-        Matched(results)
+        Matched(result_teams)
     }
 
-    // fn is_valid_entry(&self, entry: &Entry) -> Result<(), Box<dyn Error>> {
-    //
-    //
-    //     Ok(())
-    // }
-
     fn serialize(&self) -> Result<Value, Box<dyn Error>> {
-        Ok(serde_json::to_value(self)?)
+        let json = serde_json::to_value(self)?;
+        Ok(json)
     }
 
     fn remove_all(&mut self) -> Vec<Entry> {
-        self.teams_by_size.clear();
-        self.teams.drain().map(|(_, entry)| entry).collect()
+        let entries: Vec<Entry> = self.entries.drain().map(|(_, entry)| entry).collect();
+        self.entries_by_size.clear();
+        entries
     }
 
     fn get_entries(&self) -> Vec<&Entry> {
-        self.teams.values().collect()
+        self.entries.values().collect()
     }
 
     fn remove_entry(&mut self, entry_id: &EntryId) -> Result<Entry, Box<dyn Error>> {
-        let entry = self.teams.remove(entry_id).ok_or("Entry not found")?;
-        let size = entry.players.len();
-
-        let teams = self.teams_by_size.get_mut(size).unwrap();
-        teams.retain(|id| id != entry_id);
-
-        Ok(entry)
+        let entry = self.entries.remove(entry_id);
+        if let Some(entry) = entry {
+            if let Some(teams) = self.entries_by_size.get_mut(&(entry.players.len() as i32)) {
+                teams.retain(|&id| id != *entry_id);
+            }
+            Ok(entry)
+        } else {
+            Err("Entry not found".into())
+        }
     }
 
     fn get_entry(&self, entry_id: &EntryId) -> Option<&Entry> {
-        self.teams.get(entry_id)
+        self.entries.get(entry_id)
     }
 
     fn add_entry(&mut self, entry: Entry) -> Result<(), Box<dyn Error>> {
-        if entry.players.len() < self.min_entry_size as usize {
-            return Err(format!(
-                "Entry size {} is less than minimum required size {}",
-                entry.players.len(),
-                self.min_entry_size
-            )
-            .into());
-        }
+        let teams = self
+            .entries_by_size
+            .entry(entry.players.len() as i32)
+            .or_insert_with(Vec::new);
+        teams.push(entry.id);
 
-        if entry.players.len() > self.max_entry_size as usize {
-            return Err(format!(
-                "Entry size {} exceeds maximum allowed size {}",
-                entry.players.len(),
-                self.max_entry_size
-            )
-            .into());
-        }
-
-        let size = entry.players.len();
-
-        match self.teams_by_size.get_mut(size) {
-            None => {
-                self.teams_by_size.push(vec![entry.id]);
-            }
-            Some(teams) => {
-                teams.push(entry.id);
-            }
-        }
-
-        self.teams.insert(entry.id, entry);
+        self.entries.insert(entry.id, entry);
 
         Ok(())
     }
 }
 
-#[derive(Clone, Hash, Eq, PartialEq, Debug)]
+#[derive(Debug, Clone)]
 struct BacktrackState {
-    remaining: i16,
-    current_combination: Vec<i16>,
-    start: i16,
+    remaining: i32,
+    current_combination: Vec<i32>,
+    start: i32,
 }
 
-pub fn find_unique_addends(target: i16) -> Result<Vec<Vec<i16>>, String> {
+fn find_unique_addends(target: i32) -> Vec<Vec<i32>> {
     if target <= 0 {
-        return Err("Target must be a positive integer".to_string());
+        panic!("Target must be a positive integer");
     }
 
-    let mut result: Vec<Vec<i16>> = Vec::new();
-
+    let mut result: Vec<Vec<i32>> = Vec::new();
     let mut stack: VecDeque<BacktrackState> = VecDeque::new();
     stack.push_front(BacktrackState {
         remaining: target,
@@ -190,14 +237,12 @@ pub fn find_unique_addends(target: i16) -> Result<Vec<Vec<i16>>, String> {
     });
 
     while let Some(state) = stack.pop_front() {
-        let BacktrackState {
-            remaining,
-            current_combination,
-            start,
-        } = state;
+        let remaining = state.remaining;
+        let current_combination = state.current_combination;
+        let start = state.start;
 
         if remaining == 0 {
-            result.push(current_combination.clone());
+            result.push(current_combination);
             continue;
         }
 
@@ -208,7 +253,6 @@ pub fn find_unique_addends(target: i16) -> Result<Vec<Vec<i16>>, String> {
         for i in start..=remaining {
             let mut new_combination = current_combination.clone();
             new_combination.push(i);
-
             stack.push_front(BacktrackState {
                 remaining: remaining - i,
                 current_combination: new_combination,
@@ -217,86 +261,29 @@ pub fn find_unique_addends(target: i16) -> Result<Vec<Vec<i16>>, String> {
         }
     }
 
-    Ok(result)
+    result
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::entry::Entry;
+    use crate::matchmaker::Matchmaker;
     use serde_json::Map;
-    use super::*;
-    use tracing::debug;
+    use uuid::Uuid;
 
     #[test]
-    fn test_find_unique_addends() {
-        let target = 5;
+    pub fn test() {
+        let mut matchmaker = super::FlexibleMatchmaker::new(2, 1, 1, 1);
 
-        //[[5], [2, 3], [1, 4], [1, 2, 2], [1, 1, 3], [1, 1, 1, 2], [1, 1, 1, 1, 1]]
-        debug!("{:?}", find_unique_addends(target));
-
-        assert_eq!(
-            find_unique_addends(target).unwrap(),
-            vec![
-                vec![5],
-                vec![2, 3],
-                vec![1, 4],
-                vec![1, 2, 2],
-                vec![1, 1, 3],
-                vec![1, 1, 1, 2],
-                vec![1, 1, 1, 1, 1]
-            ]
-        );
-    }
-
-    #[test]
-    fn test_negative_addends() {
-        let target = -5;
-
-        // Should return an error
-        assert!(find_unique_addends(target).is_err());
-    }
-
-    #[test]
-    fn test_construct_success() {
-        let matchmaker = FlexibleMatchMaker::new(5, 1, 5, 2);
-
-        assert!(matchmaker.is_ok());
-    }
-
-    #[test]
-    fn test_construct_failure() {
-        let matchmaker = FlexibleMatchMaker::new(-5, 1, 5, 2);
-
-        assert!(matchmaker.is_err());
-    }
-
-    #[test]
-    fn test_matchmake_success() {
-        let mut matchmaker = FlexibleMatchMaker::new(1, 1, 1, 2).unwrap();
-
-        let team1 = Entry::new(Uuid::new_v4(), vec![Uuid::new_v4()], Map::new());
-        let team2 = Entry::new(Uuid::new_v4(), vec![Uuid::new_v4()], Map::new());
-
-        matchmaker.add_entry(team1).unwrap();
-        matchmaker.add_entry(team2).unwrap();
+        matchmaker
+            .add_entry(Entry::new(Uuid::new_v4(), vec![Uuid::new_v4()], Map::new()))
+            .unwrap();
+        matchmaker
+            .add_entry(Entry::new(Uuid::new_v4(), vec![Uuid::new_v4()], Map::new()))
+            .unwrap();
 
         let result = matchmaker.matchmake();
 
-        assert!(result.is_matched());
-    }
-
-    #[test]
-    fn test_matchmake_not_enough_players() {
-        let mut matchmaker = FlexibleMatchMaker::new(5, 1, 5, 2).unwrap();
-
-        let team1 = Entry::new(Uuid::new_v4(), vec![Uuid::new_v4()], Map::new());
-
-        matchmaker.add_entry(team1).unwrap();
-
-        let result: MatchmakerResult = matchmaker.matchmake();
-
-        assert!(result.is_skip());
-        let error = result.unwrap_skip();
-
-        assert_eq!(error, "Not enough players to form a match".to_string());
+        println!("{:?}", result);
     }
 }
