@@ -45,7 +45,15 @@ pub async fn create_queue_route(
 ) -> (StatusCode, Json<Value>) {
     let queue_tracker = queue_tracker.0;
 
-    match QueueTracker::create(queue_tracker, request.name.clone(), request.matchmaker.clone(), request.settings.clone(), true).await {
+    match QueueTracker::create(
+        queue_tracker,
+        request.name.clone(),
+        request.matchmaker.clone(),
+        request.settings.clone(),
+        true,
+    )
+    .await
+    {
         Ok(_) => (
             StatusCode::CREATED,
             Json(json!({"status": "Queue created successfully"})),
@@ -101,13 +109,16 @@ pub async fn get_queues_route(
 pub async fn get_queue(
     registry: State<Arc<Mutex<QueueTracker>>>,
     Path(name): Path<String>,
-) -> (StatusCode, String) {
+) -> (StatusCode, Json<Value>) {
     let registry = registry.lock().await;
 
     let queue: Option<Arc<Mutex<Queue>>> = registry.get_queue(&name).await;
 
     let Some(queue) = queue else {
-        return (StatusCode::NOT_FOUND, String::from("Queue not found"));
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": format!("Queue {} does not exist", name)})),
+        );
     };
 
     let queue = queue.lock().await;
@@ -116,7 +127,8 @@ pub async fn get_queue(
     let Ok(matchmaker_settings) = matchmaker.serialize() else {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
-            String::from("Error occurred converting to json."),
+            // String::from("Error occurred converting to json."),
+            Json(json!({"error": "Error occurred converting to json."})),
         );
     };
 
@@ -131,13 +143,13 @@ pub async fn get_queue(
         matchmaker,
     );
 
-    let queue_data_json = serde_json::to_string(&queue_data);
+    let queue_data_json = serde_json::to_value(&queue_data);
     let Ok(queue_data) = queue_data_json else {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
-            String::from("Error occurred converting to json."),
+            Json(json!({"error": "Error occurred converting to json."})),
         );
     };
 
-    (StatusCode::OK, queue_data)
+    (StatusCode::OK, Json(queue_data))
 }

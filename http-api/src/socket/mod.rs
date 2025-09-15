@@ -1,4 +1,4 @@
-use crate::data::QueueJoinRequest;
+use crate::data::{QueueError, QueueJoinRequest};
 use axum::extract::ws::Message::Text;
 use axum::extract::ws::{Message, WebSocket};
 use axum::{
@@ -13,6 +13,7 @@ use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{debug, error, info};
+use common::queue_tracker;
 
 #[axum::debug_handler]
 pub async fn ws_upgrade(
@@ -77,6 +78,7 @@ pub async fn join_queue(
         .join(&queue_name, entry)
         .await
         .map_err(|x| x.to_string())?;
+
     drop(tracker_guard);
     debug!("Joined queue, waiting for queue result...");
 
@@ -88,6 +90,8 @@ async fn send_socket(
     mut sender: SplitSink<WebSocket, Message>,
     socket_response: Result<QueueResult, String>,
 ) {
+    let socket_response = socket_response.map_err(|x| QueueError::new(x));
+
     match serde_json::to_string(&socket_response) {
         Ok(json) => {
             match sender.send(Text(json.into())).await {
