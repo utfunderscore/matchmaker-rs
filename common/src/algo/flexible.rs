@@ -7,7 +7,8 @@ use std::collections::{HashMap, VecDeque};
 use std::error::Error;
 
 #[derive(Serialize, Deserialize)]
-struct FlexibleMatchmaker {
+#[serde(rename_all = "camelCase")]
+pub struct FlexibleMatchMaker {
     number_of_teams: i32,
     team_size: i32,
     max_entry_size: i32,
@@ -20,15 +21,15 @@ struct FlexibleMatchmaker {
     entries_by_size: HashMap<i32, Vec<EntryId>>,
 }
 
-impl FlexibleMatchmaker {
+impl FlexibleMatchMaker {
     pub fn new(
-        number_of_teams: i32,
         team_size: i32,
-        max_entry_size: i32,
         min_entry_size: i32,
-    ) -> Self {
-        let addends = find_unique_addends(team_size);
-        Self {
+        max_entry_size: i32,
+        number_of_teams: i32,
+    ) -> Result<Self, Box<dyn Error>> {
+        let addends = find_unique_addends(team_size)?;
+        Ok(Self {
             number_of_teams,
             team_size,
             addends,
@@ -36,7 +37,7 @@ impl FlexibleMatchmaker {
             min_entry_size,
             entries: HashMap::new(),
             entries_by_size: HashMap::new(),
-        }
+        })
     }
 
     fn counter_from_slice(slice: &[i32]) -> HashMap<i32, i32> {
@@ -99,7 +100,9 @@ impl FlexibleMatchmaker {
     pub fn build_teams(teams: &[i32], team_size: i32, num_teams: usize) -> Option<Vec<Vec<i32>>> {
         let teams_count = Self::counter_from_slice(teams);
 
-        let addends: Vec<Vec<i32>> = find_unique_addends(team_size);
+        let Ok(addends) = find_unique_addends(team_size) else {
+            return None;
+        };
 
         let mut valid_compositions: Vec<Vec<i32>> = Vec::new();
 
@@ -128,7 +131,17 @@ impl FlexibleMatchmaker {
     }
 }
 
-impl Matchmaker for FlexibleMatchmaker {
+impl FlexibleMatchMaker {
+    pub fn deserialize(value: Value) -> Result<Box<dyn Matchmaker + Send + Sync>, Box<dyn Error>> {
+        let mut matchmaker: FlexibleMatchMaker = serde_json::from_value(value)?;
+
+        matchmaker.addends = find_unique_addends(matchmaker.team_size)?;
+
+        Ok(Box::new(matchmaker))
+    }
+}
+
+impl Matchmaker for FlexibleMatchMaker {
     fn get_type_name(&self) -> String {
         String::from("flexible")
     }
@@ -145,7 +158,7 @@ impl Matchmaker for FlexibleMatchmaker {
         );
 
         let Some(team_counts) = team_counts else {
-            return MatchmakerResult::Skip(String::from(""));
+            return MatchmakerResult::Skip(String::from("Not enough players to form a match"));
         };
 
         let mut index_tracker: HashMap<i32, i32> = HashMap::new();
@@ -162,7 +175,9 @@ impl Matchmaker for FlexibleMatchmaker {
                 };
                 let picked = by_size.get(index as usize);
                 let Some(picked) = picked else {
-                    return MatchmakerResult::Skip(String::from(""));
+                    return MatchmakerResult::Skip(String::from(
+                        "Not enough players to form a match",
+                    ));
                 };
                 team.push(picked.clone());
             }
@@ -223,9 +238,9 @@ struct BacktrackState {
     start: i32,
 }
 
-fn find_unique_addends(target: i32) -> Vec<Vec<i32>> {
+fn find_unique_addends(target: i32) -> Result<Vec<Vec<i32>>, Box<dyn Error>> {
     if target <= 0 {
-        panic!("Target must be a positive integer");
+        return Err(String::from("Target must be a positive integer").into());
     }
 
     let mut result: Vec<Vec<i32>> = Vec::new();
@@ -261,19 +276,95 @@ fn find_unique_addends(target: i32) -> Vec<Vec<i32>> {
         }
     }
 
-    result
+    Ok(result)
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::entry::Entry;
     use crate::matchmaker::Matchmaker;
     use serde_json::Map;
+    use tracing::debug;
     use uuid::Uuid;
 
     #[test]
-    pub fn test() {
-        let mut matchmaker = super::FlexibleMatchmaker::new(2, 1, 1, 1);
+    fn test_find_unique_addends() {
+        let target = 5;
+
+        //[[5], [2, 3], [1, 4], [1, 2, 2], [1, 1, 3], [1, 1, 1, 2], [1, 1, 1, 1, 1]]
+        debug!("{:?}", find_unique_addends(target));
+
+        assert_eq!(
+            find_unique_addends(target).unwrap(),
+            vec![
+                vec![5],
+                vec![2, 3],
+                vec![1, 4],
+                vec![1, 2, 2],
+                vec![1, 1, 3],
+                vec![1, 1, 1, 2],
+                vec![1, 1, 1, 1, 1]
+            ]
+        );
+    }
+
+    #[test]
+    fn test_negative_addends() {
+        let target = -5;
+
+        // Should return an error
+        assert!(find_unique_addends(target).is_err());
+    }
+
+    #[test]
+    fn test_construct_success() {
+        let matchmaker = FlexibleMatchMaker::new(5, 1, 5, 2);
+
+        assert!(matchmaker.is_ok());
+    }
+
+    #[test]
+    fn test_construct_failure() {
+        let matchmaker = FlexibleMatchMaker::new(-5, 1, 5, 2);
+
+        assert!(matchmaker.is_err());
+    }
+
+    #[test]
+    fn test_matchmake_success() {
+        let mut matchmaker = FlexibleMatchMaker::new(1, 1, 1, 2).unwrap();
+
+        let team1 = Entry::new(Uuid::new_v4(), vec![Uuid::new_v4()], Map::new());
+        let team2 = Entry::new(Uuid::new_v4(), vec![Uuid::new_v4()], Map::new());
+
+        matchmaker.add_entry(team1).unwrap();
+        matchmaker.add_entry(team2).unwrap();
+
+        let result = matchmaker.matchmake();
+
+        assert!(result.is_matched());
+    }
+
+    #[test]
+    fn test_matchmake_not_enough_players() {
+        let mut matchmaker = FlexibleMatchMaker::new(5, 1, 5, 2).unwrap();
+
+        let team1 = Entry::new(Uuid::new_v4(), vec![Uuid::new_v4()], Map::new());
+
+        matchmaker.add_entry(team1).unwrap();
+
+        let result: MatchmakerResult = matchmaker.matchmake();
+
+        assert!(result.is_skip());
+        let error = result.unwrap_skip();
+
+        assert_eq!(error, "Not enough players to form a match".to_string());
+    }
+
+    #[test]
+    pub fn regression_test_1() {
+        let mut matchmaker = super::FlexibleMatchMaker::new(2, 1, 1, 1).unwrap();
 
         matchmaker
             .add_entry(Entry::new(Uuid::new_v4(), vec![Uuid::new_v4()], Map::new()))
