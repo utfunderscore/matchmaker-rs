@@ -2,6 +2,7 @@ use crate::algo::elo::EloMatchmaker;
 use crate::entry::{Entry, EntryId};
 use serde_json::Value;
 use std::error::Error;
+use crate::algo::flexible::FlexibleMatchMaker;
 
 #[derive(PartialEq, Debug)]
 pub enum MatchmakerResult {
@@ -63,7 +64,7 @@ pub fn deserialize(
 ) -> Result<Box<dyn Matchmaker + Send + Sync>, Box<dyn Error>> {
     match name.as_str() {
         "elo" => EloMatchmaker::deserialize(value),
-        // "flexible" => FlexibleMatchMaker::deserialize(value),
+        "flexible" => FlexibleMatchMaker::deserialize(value),
         _ => Err(format!("Unknown matchmaker type: {}", name).into()),
     }
 }

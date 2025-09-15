@@ -1,7 +1,8 @@
 use crate::entry::{Entry, EntryId};
 use crate::gamefinder::Game;
 use crate::matchmaker;
-use crate::matchmaker::{Matchmaker, MatchmakerResult};
+use crate::matchmaker::MatchmakerResult;
+use crate::queue::{Queue, QueueResult};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::error::Error;
@@ -9,8 +10,6 @@ use std::sync::Arc;
 use tokio::sync::oneshot::{Receiver, Sender};
 use tokio::sync::{Mutex, MutexGuard};
 use tracing::{info, warn};
-use crate::queue::{Queue, QueueResult};
-
 
 pub struct QueueTracker {
     pub queues: HashMap<String, Arc<Mutex<Queue>>>,
@@ -28,7 +27,6 @@ impl QueueTracker {
     }
 
     pub async fn from_file() -> Arc<Mutex<Self>> {
-
         let tracker = Arc::new(Mutex::new(Self::new()));
 
         let data = tokio::fs::read_to_string("queues.json").await;
@@ -42,11 +40,19 @@ impl QueueTracker {
         };
 
         for value in queues_json {
-            let Some(name) = value.get("name").and_then(|v| v.as_str()).map(|x| String::from(x)) else {
+            let Some(name) = value
+                .get("name")
+                .and_then(|v| v.as_str())
+                .map(|x| String::from(x))
+            else {
                 warn!("Queue in queues.json has no name, skipping");
                 continue;
             };
-            let Some(matchmaker_id) = value.get("matchmaker").and_then(|v| v.as_str()).map(|x| String::from(x)) else {
+            let Some(matchmaker_id) = value
+                .get("matchmaker")
+                .and_then(|v| v.as_str())
+                .map(|x| String::from(x))
+            else {
                 warn!("Queue {} in queues.json has no matchmaker, skipping", name);
                 continue;
             };
@@ -55,16 +61,20 @@ impl QueueTracker {
                 continue;
             };
 
-            let Ok(matchmaker) = matchmaker::deserialize(matchmaker_id.clone(), settings.clone()) else {
-                warn!("Failed to deserialize matchmaker for queue {}, skipping", name);
-                continue;
-            };
-            if Self::create(tracker.clone(), name.clone(), matchmaker_id, settings.clone(), false).await.is_ok() {
+            if Self::create(
+                tracker.clone(),
+                name.clone(),
+                matchmaker_id,
+                settings.clone(),
+                false,
+            )
+            .await
+            .is_ok()
+            {
                 info!("Loaded queue {} from file", name);
             } else {
                 warn!("Failed to create queue {} from file", name);
             }
-
         }
         tracker
     }
@@ -89,7 +99,10 @@ impl QueueTracker {
             queues.push(queue_json);
         }
 
-        if let Err(e) = std::fs::write("queues.json", serde_json::to_string_pretty(&queues).unwrap()) {
+        if let Err(e) = std::fs::write(
+            "queues.json",
+            serde_json::to_string_pretty(&queues).unwrap(),
+        ) {
             warn!("Failed to write queues to file: {}", e);
         }
     }
@@ -103,21 +116,22 @@ impl QueueTracker {
         name: String,
         matchmaker_id: String,
         settings: Value,
-        save: bool
+        save: bool,
     ) -> Result<(), Box<dyn Error>> {
-
         let tracker_copy = tracker.clone();
         let mut tracker_guard = tracker_copy.lock().await;
 
+        if tracker_guard.get_queue(&name).await.is_some() {
+            return Err(String::from("Queue already exists").into())
+        }
+
         let matchmaker = matchmaker::deserialize(matchmaker_id, settings)?;
 
-        info!("Created queue: {}", &name);
         let queue = Queue::new(name, matchmaker, HashMap::new());
         let queue_id = queue.id.clone();
         let queue_ref = Arc::new(Mutex::new(queue));
 
-        tracker_guard.queues
-            .insert(queue_id, queue_ref.clone());
+        tracker_guard.queues.insert(queue_id, queue_ref.clone());
 
         Self::start_task(tracker, queue_ref);
 
@@ -133,8 +147,10 @@ impl QueueTracker {
         queue_id: &str,
         entry: Entry,
     ) -> Result<Receiver<Result<QueueResult, String>>, Box<dyn Error>> {
-        let (channel_tx, channel_rx): (Sender<Result<QueueResult, String>>, Receiver<Result<QueueResult, String>>) =
-            tokio::sync::oneshot::channel::<Result<QueueResult, String>>();
+        let (channel_tx, channel_rx): (
+            Sender<Result<QueueResult, String>>,
+            Receiver<Result<QueueResult, String>>,
+        ) = tokio::sync::oneshot::channel::<Result<QueueResult, String>>();
 
         if self.locked {
             return Err("QueueTracker is locked, no new entries can be added".into());
@@ -202,11 +218,7 @@ impl QueueTracker {
                             let _ = sender.send(Ok(QueueResult::new(teams_entries.clone(), game)));
                         }
                     }
-                    MatchmakerResult::Error(err, affected) => {
-
-
-
-                    }
+                    MatchmakerResult::Error(err, affected) => {}
                     MatchmakerResult::Skip(_) => {}
                 }
             }
