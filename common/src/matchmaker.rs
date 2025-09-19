@@ -33,7 +33,7 @@ impl MatchmakerResult {
     }
 
     pub fn unwarp_err(&self) -> String {
-        if let MatchmakerResult::Error(err, affected) = self {
+        if let MatchmakerResult::Error(err, _) = self {
             err.clone()
         } else {
             panic!("Called unwarp_err on a non-error result");

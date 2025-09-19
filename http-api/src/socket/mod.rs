@@ -13,7 +13,6 @@ use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{debug, error, info};
-use common::queue_tracker;
 
 #[axum::debug_handler]
 pub async fn ws_upgrade(
@@ -80,9 +79,9 @@ pub async fn join_queue(
         .map_err(|x| x.to_string())?;
 
     drop(tracker_guard);
-    
+
     QueueTracker::tick_task(queue_tracker, queue_name).await;
-    
+
     debug!("Joined queue, waiting for queue result...");
 
     let result = receiver.await.map_err(|x| x.to_string())??;
