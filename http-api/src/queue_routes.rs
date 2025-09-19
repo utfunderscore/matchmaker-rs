@@ -1,12 +1,11 @@
 use crate::data::QueueData;
-use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use axum::Json;
 use common::queue::Queue;
 use common::queue_tracker::QueueTracker;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
-use std::error::Error;
+use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -127,7 +126,6 @@ pub async fn get_queue(
     let Ok(matchmaker_settings) = matchmaker.serialize() else {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
-            // String::from("Error occurred converting to json."),
             Json(json!({"error": "Error occurred converting to json."})),
         );
     };

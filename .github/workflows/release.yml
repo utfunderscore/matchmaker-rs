@@ -22,14 +22,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
-
-      - name: Set up Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-          target: ${{ env.TARGET }}
-
       - name: Cache Rust dependencies and build outputs
         uses: Swatinem/rust-cache@v2
         with:
@@ -40,7 +32,7 @@ jobs:
           cache-provider: github
           cache-bin: true
           save-if: ${{ github.ref_type == 'tag' }}
-
+      - run: rustup toolchain install stable --profile minimal
       - name: Build release binary
         run: cargo build --package ${{ env.PACKAGE_NAME }} --release --target ${{ env.TARGET }}
 

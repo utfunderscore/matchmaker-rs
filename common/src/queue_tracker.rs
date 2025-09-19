@@ -32,6 +32,7 @@ impl QueueTracker {
         let data = tokio::fs::read_to_string("queues.json").await;
         let Ok(data) = data else {
             info!("No queues.json file found, starting with empty QueueTracker");
+            tokio::fs::write("queues.json", "[]").await.ok();
             return tracker;
         };
         let Ok(queues_json) = serde_json::from_str::<Vec<Value>>(&data) else {
@@ -159,6 +160,13 @@ impl QueueTracker {
         let queue = self.queues.get_mut(queue_id).ok_or("Queue not found")?;
 
         let mut queue = queue.lock().await;
+
+        for entry_player in &entry.players {
+            if queue.has_player(entry_player) {
+                return Err(format!("Player {} is already in this queue", entry_player).into());
+            }
+        }
+
         queue.add_entry(entry.clone())?;
         self.senders.insert(entry.id, channel_tx);
 

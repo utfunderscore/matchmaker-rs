@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y \
 RUN groupadd -g 1001 appgroup && \
     useradd -r -u 1001 -g appgroup -s /usr/sbin/nologin appuser
 
-WORKDIR /app
+WORKDIR /app/data
 
 # Create a data directory for volume mount and set permissions
 RUN mkdir -p /app/data && \

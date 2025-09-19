@@ -4,6 +4,7 @@ use crate::matchmaker::{Matchmaker, MatchmakerResult};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::warn;
+use uuid::Uuid;
 
 pub struct Queue {
     pub id: String,
@@ -52,6 +53,10 @@ impl Queue {
 
     pub fn entries(&self) -> &HashMap<EntryId, Entry> {
         &self.entries
+    }
+
+    pub fn has_player(&self, player_id: &Uuid) -> bool {
+        self.entries.values().any(|x| x.players.contains(player_id))
     }
 
     pub fn remove_entry(&mut self, entry_id: &EntryId) -> Option<Entry> {
