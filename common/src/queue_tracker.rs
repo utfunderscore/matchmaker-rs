@@ -123,7 +123,7 @@ impl QueueTracker {
         let mut tracker_guard = tracker_copy.lock().await;
 
         if tracker_guard.get_queue(&name).await.is_some() {
-            return Err(String::from("Queue already exists").into())
+            return Err(String::from("Queue already exists").into());
         }
 
         let matchmaker = matchmaker::deserialize(matchmaker_id, settings)?;
@@ -132,9 +132,11 @@ impl QueueTracker {
         let queue_id = queue.id.clone();
         let queue_ref = Arc::new(Mutex::new(queue));
 
-        tracker_guard.queues.insert(queue_id, queue_ref.clone());
+        tracker_guard
+            .queues
+            .insert(queue_id.clone(), queue_ref.clone());
 
-        Self::start_task(tracker, queue_ref);
+        Self::start_task(tracker, queue_id);
 
         if save {
             tracker_guard.save_to_file().await;
@@ -190,46 +192,52 @@ impl QueueTracker {
         true
     }
 
-    fn start_task(tracker: Arc<Mutex<Self>>, queue: Arc<Mutex<Queue>>) {
+    fn start_task(tracker: Arc<Mutex<Self>>, queue_id: String) {
         // Start a background task to process queues
-
-        let tracker = tracker.clone();
 
         tokio::spawn(async move {
             loop {
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-
-                let mut tracker = tracker.lock().await;
-
-                let mut queue: MutexGuard<Queue> = queue.lock().await;
-                let result = queue.tick();
-
-                match result {
-                    MatchmakerResult::Matched(teams) => {
-                        let senders = teams
-                            .iter()
-                            .flatten()
-                            .filter_map(|id| tracker.senders.remove(id))
-                            .collect::<Vec<Sender<Result<QueueResult, String>>>>();
-
-                        let teams_entries: Vec<Vec<Entry>> = teams
-                            .into_iter()
-                            .map(|team| {
-                                team.iter()
-                                    .filter_map(|id| queue.remove_entry(id))
-                                    .collect()
-                            })
-                            .collect();
-
-                        for sender in senders {
-                            let game = Game::demo();
-                            let _ = sender.send(Ok(QueueResult::new(teams_entries.clone(), game)));
-                        }
-                    }
-                    MatchmakerResult::Error(err, affected) => {}
-                    MatchmakerResult::Skip(_) => {}
-                }
+                Self::tick_task(tracker.clone(), queue_id.clone()).await;
             }
         });
+    }
+
+    pub async fn tick_task(tracker: Arc<Mutex<Self>>, queue_id: String) {
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+
+        let mut tracker = tracker.lock().await;
+        let queue = tracker.get_queue(&queue_id).await;
+        let Some(queue) = queue else {
+            return;
+        };
+
+        let mut queue: MutexGuard<Queue> = queue.lock().await;
+        let result = queue.tick();
+
+        match result {
+            MatchmakerResult::Matched(teams) => {
+                let senders = teams
+                    .iter()
+                    .flatten()
+                    .filter_map(|id| tracker.senders.remove(id))
+                    .collect::<Vec<Sender<Result<QueueResult, String>>>>();
+
+                let teams_entries: Vec<Vec<Entry>> = teams
+                    .into_iter()
+                    .map(|team| {
+                        team.iter()
+                            .filter_map(|id| queue.remove_entry(id))
+                            .collect()
+                    })
+                    .collect();
+
+                for sender in senders {
+                    let game = Game::demo();
+                    let _ = sender.send(Ok(QueueResult::new(teams_entries.clone(), game)));
+                }
+            }
+            MatchmakerResult::Error(err, affected) => {}
+            MatchmakerResult::Skip(_) => {}
+        }
     }
 }

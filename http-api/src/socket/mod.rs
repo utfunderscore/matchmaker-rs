@@ -80,6 +80,9 @@ pub async fn join_queue(
         .map_err(|x| x.to_string())?;
 
     drop(tracker_guard);
+    
+    QueueTracker::tick_task(queue_tracker, queue_name).await;
+    
     debug!("Joined queue, waiting for queue result...");
 
     let result = receiver.await.map_err(|x| x.to_string())??;
