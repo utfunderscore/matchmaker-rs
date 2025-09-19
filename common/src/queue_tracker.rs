@@ -236,7 +236,31 @@ impl QueueTracker {
                     let _ = sender.send(Ok(QueueResult::new(teams_entries.clone(), game)));
                 }
             }
-            MatchmakerResult::Error(err, affected) => {}
+            MatchmakerResult::Error(err, affected) => {
+                let players: Vec<EntryId> = if let Some(affected) = affected {
+                    vec![affected]
+                } else {
+                    queue
+                        .entries()
+                        .keys()
+                        .map(|x| x.clone())
+                        .collect::<Vec<EntryId>>()
+                };
+
+                players.iter().for_each(|x| {
+                    queue.remove_entry(x);
+                });
+
+                let senders: Vec<Sender<Result<QueueResult, String>>> = players
+                    .iter()
+                    .filter_map(|x| tracker.senders.remove(x))
+                    .collect();
+                for sender in senders {
+                    let game = Game::demo();
+                    let _ = sender.send(Err(err.clone()));
+                }
+
+            }
             MatchmakerResult::Skip(_) => {}
         }
     }
