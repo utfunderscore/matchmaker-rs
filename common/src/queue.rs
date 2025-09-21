@@ -12,7 +12,7 @@ pub struct Queue {
     entries: HashMap<EntryId, Entry>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct QueueResult {
     pub teams: Vec<Vec<Entry>>,
     pub game: Game,

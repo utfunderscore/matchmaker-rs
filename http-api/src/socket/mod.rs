@@ -35,10 +35,14 @@ pub async fn handle_socket(
 
     tokio::spawn(async move {
         debug!("Waiting for initial message from client...");
+
         let Some(Ok(Text(text))) = receiver.next().await else {
-            send_socket(sender, Err("Failed to receive initial message".to_string())).await;
+            // send_socket(sender, Err("Failed to receive initial message".to_string())).await;
+            info!("Socket error occurred");
             return;
         };
+
+
 
         debug!("Received initial message: {}", text);
         let queue_join_request: QueueJoinRequest = match serde_json::from_str(&text) {
@@ -54,8 +58,24 @@ pub async fn handle_socket(
         };
 
         debug!("Parsed join request: {:?}", queue_join_request);
-        let result = join_queue(queue_name, queue_join_request, queue_tracker).await;
-        send_socket(sender, result).await;
+        let result = tokio::select! {
+            res = join_queue(queue_name, queue_join_request, queue_tracker) => Some(res),
+            msg = async {
+                loop {
+                    match receiver.next().await {
+                        None => break None,
+                        Some(Err(e)) => break None,
+                        Some(Ok(_)) => continue,
+                    }
+                }
+            } => msg,
+        };
+        if let Some(result) = result {
+            println!("Sending: {:?}", result);
+            send_socket(sender, result).await;
+        } else {
+            info!("Socket closed");
+        }
     });
 }
 

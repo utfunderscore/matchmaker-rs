@@ -8,7 +8,7 @@ use std::path::Path;
 use tokio::{fs, io};
 use uuid::Uuid;
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Game {
     pub game_id: String,
