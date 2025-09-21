@@ -207,7 +207,7 @@ impl QueueTracker {
     fn start_task(tracker: Arc<Mutex<Self>>, queue_id: &str) {
         // Start a background task to process queues
 
-        let queue_id = String::from(queue_id.clone());
+        let queue_id = String::from(queue_id);
         tokio::spawn(async move {
 
             loop {
@@ -270,7 +270,6 @@ impl QueueTracker {
                     .filter_map(|x| tracker.senders.remove(x))
                     .collect();
                 for sender in senders {
-                    let game = Game::demo();
                     let _ = sender.send(Err(err.clone()));
                 }
 
