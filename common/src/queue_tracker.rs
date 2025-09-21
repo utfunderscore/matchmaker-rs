@@ -129,7 +129,7 @@ impl QueueTracker {
         let matchmaker = matchmaker::deserialize(matchmaker_id, settings)?;
 
         let queue = Queue::new(name, matchmaker, HashMap::new());
-        let queue_id = queue.id.clone();
+        let queue_id = &queue.id.clone();
         let queue_ref = Arc::new(Mutex::new(queue));
 
         tracker_guard
@@ -174,6 +174,18 @@ impl QueueTracker {
 
         Ok(channel_rx)
     }
+
+    pub async fn leave(&mut self, queue_id: &str, entry_id: EntryId) {
+        self.senders.remove(&entry_id);
+        let Some(queue) = self.queues.get(queue_id) else {
+            return;
+        };
+
+        let mut queue = queue.lock().await;
+        queue.remove_entry(&entry_id);
+
+    }
+
     pub fn get_queues(&self) -> &HashMap<String, Arc<Mutex<Queue>>> {
         &self.queues
     }
@@ -192,17 +204,19 @@ impl QueueTracker {
         true
     }
 
-    fn start_task(tracker: Arc<Mutex<Self>>, queue_id: String) {
+    fn start_task(tracker: Arc<Mutex<Self>>, queue_id: &str) {
         // Start a background task to process queues
 
+        let queue_id = String::from(queue_id.clone());
         tokio::spawn(async move {
+
             loop {
-                Self::tick_task(tracker.clone(), queue_id.clone()).await;
+                Self::tick_task(tracker.clone(), &queue_id).await;
             }
         });
     }
 
-    pub async fn tick_task(tracker: Arc<Mutex<Self>>, queue_id: String) {
+    pub async fn tick_task(tracker: Arc<Mutex<Self>>, queue_id: &str) {
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
         let mut tracker = tracker.lock().await;

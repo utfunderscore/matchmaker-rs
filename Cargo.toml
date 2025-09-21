@@ -18,6 +18,3 @@ members = [
 [profile.profiling]
 inherits = "release"
 debug = true
-
-[build]
-rustflags = ["--cfg", "tokio_unstable"]

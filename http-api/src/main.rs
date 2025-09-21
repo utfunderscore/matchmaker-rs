@@ -17,6 +17,12 @@ use common::gamefinder::{GameFinder, GameFinderConfig};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    // Print build info at startup
+    println!(
+        "Build time: {}\nGit commit hash: {}",
+        env!("BUILD_TIME"),
+        env!("GIT_HASH")
+    );
 
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
@@ -84,5 +90,3 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
-
-

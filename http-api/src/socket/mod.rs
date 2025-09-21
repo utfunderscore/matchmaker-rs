@@ -5,7 +5,7 @@ use axum::{
     extract::{Path, State, WebSocketUpgrade},
     response::Response,
 };
-use common::entry::Entry;
+use common::entry::{Entry, EntryId};
 use common::queue::QueueResult;
 use common::queue_tracker::QueueTracker;
 use futures_util::stream::{SplitSink, SplitStream};
@@ -42,8 +42,6 @@ pub async fn handle_socket(
             return;
         };
 
-
-
         debug!("Received initial message: {}", text);
         let queue_join_request: QueueJoinRequest = match serde_json::from_str(&text) {
             Ok(request) => request,
@@ -57,14 +55,17 @@ pub async fn handle_socket(
             }
         };
 
+        let queue_name = &queue_name;
+        let id = queue_join_request.id.clone();
+
         debug!("Parsed join request: {:?}", queue_join_request);
         let result = tokio::select! {
-            res = join_queue(queue_name, queue_join_request, queue_tracker) => Some(res),
+            res = join_queue(queue_name, queue_join_request, queue_tracker.clone()) => Some(res),
             msg = async {
                 loop {
                     match receiver.next().await {
                         None => break None,
-                        Some(Err(e)) => break None,
+                        Some(Err(_)) => break None,
                         Some(Ok(_)) => continue,
                     }
                 }
@@ -74,13 +75,14 @@ pub async fn handle_socket(
             println!("Sending: {:?}", result);
             send_socket(sender, result).await;
         } else {
-            info!("Socket closed");
+            let mut queue_tracker = queue_tracker.lock().await;
+            queue_tracker.leave(queue_name, EntryId(id)).await
         }
     });
 }
 
 pub async fn join_queue(
-    queue_name: String,
+    queue_name: &str,
     queue_join_request: QueueJoinRequest,
     queue_tracker: Arc<Mutex<QueueTracker>>,
 ) -> Result<QueueResult, String> {
@@ -94,7 +96,7 @@ pub async fn join_queue(
     );
 
     let receiver = tracker_guard
-        .join(&queue_name, entry)
+        .join(queue_name, entry)
         .await
         .map_err(|x| x.to_string())?;
 
