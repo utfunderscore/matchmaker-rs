@@ -21,9 +21,9 @@ RUN mkdir -p /app/data && \
 VOLUME ["/app/data"]
 
 # Copy binary and set permissions before changing user
-COPY target/x86_64-unknown-linux-gnu/release/http-api http-api
-RUN chmod +x http-api && \
-    chown appuser:appgroup http-api && \
+COPY target/x86_64-unknown-linux-gnu/release/http-api /app/http-api
+RUN chmod +x /app/http-api && \
+    chown appuser:appgroup /app/http-api && \
     chown appuser:appgroup /app && \
     chmod 755 /app
 
@@ -39,4 +39,4 @@ ENV RUST_LOG=info
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:8080/api/v1/queue || exit 1
 
-CMD ["./http-api"]
+CMD ["/app/http-api"]
