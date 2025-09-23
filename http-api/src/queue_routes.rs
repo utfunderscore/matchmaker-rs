@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use crate::state::AppState;
 
 #[derive(Serialize, Deserialize)]
 pub struct CreateQueueRequest {
@@ -39,13 +40,12 @@ pub struct CreateQueueRequest {
 ///   - Body: Error message string.
 #[axum::debug_handler]
 pub async fn create_queue_route(
-    queue_tracker: State<Arc<Mutex<QueueTracker>>>,
+    app_state: State<AppState>,
     request: Json<CreateQueueRequest>,
 ) -> (StatusCode, Json<Value>) {
-    let queue_tracker = queue_tracker.0;
 
     match QueueTracker::create(
-        queue_tracker,
+        app_state.0.queue_tracker,
         request.name.clone(),
         request.matchmaker.clone(),
         request.settings.clone(),
@@ -74,11 +74,11 @@ pub async fn create_queue_route(
 ///   - Body: `{ "error": "..." }`
 #[axum::debug_handler]
 pub async fn get_queues_route(
-    tracker: State<Arc<Mutex<QueueTracker>>>,
+    app_state: State<AppState>,
 ) -> (StatusCode, Json<Value>) {
-    let tracker = tracker.lock().await;
-
-    let queues: Vec<&String> = tracker.get_queues().keys().collect();
+    let queue_tracker = app_state.queue_tracker.lock().await;
+    
+    let queues: Vec<&String> = queue_tracker.get_queues().keys().collect();
     let json = serde_json::to_value(&queues);
 
     match json {
@@ -106,10 +106,10 @@ pub async fn get_queues_route(
 ///   - Body: `"Error occurred converting to json."`
 #[axum::debug_handler]
 pub async fn get_queue(
-    registry: State<Arc<Mutex<QueueTracker>>>,
+    app_state: State<AppState>,
     Path(name): Path<String>,
 ) -> (StatusCode, Json<Value>) {
-    let registry = registry.lock().await;
+    let registry = app_state.queue_tracker.lock().await;
 
     let queue: Option<Arc<Mutex<Queue>>> = registry.get_queue(&name).await;
 

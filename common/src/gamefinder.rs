@@ -4,8 +4,10 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
+use std::sync::Arc;
 use thiserror::Error;
 use tokio::{fs, io};
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 #[derive(Error, Debug)]
@@ -80,7 +82,7 @@ impl GameFinderSettings {
 
 #[derive(Debug, Clone)]
 pub struct GameFinder {
-    pub config: GameFinderSettings,
+    pub config: Arc<RwLock<GameFinderSettings>>,
 }
 
 lazy_static! {
@@ -88,7 +90,7 @@ lazy_static! {
 }
 
 impl GameFinder {
-    pub fn new(config: GameFinderSettings) -> GameFinder {
+    pub fn new(config: Arc<RwLock<GameFinderSettings>>) -> GameFinder {
         GameFinder { config }
     }
 
@@ -97,7 +99,8 @@ impl GameFinder {
         playlist: &str,
         players: &Vec<Vec<Uuid>>,
     ) -> Result<Game, GameFinderError> {
-        let url = self.config.base_url.replace("{playlist}", playlist);
+        let config = self.config.read().await;
+        let url = config.base_url.replace("{playlist}", playlist);
 
         let response = CLIENT.get(&url).json(&players).send().await.map_err(GameFinderError::Http)?;
 
@@ -108,19 +111,19 @@ impl GameFinder {
         let body = response.json::<Value>().await.map_err(GameFinderError::Http)?;
 
         let game_id = body
-            .query(&self.config.id_path)
+            .query(&config.id_path)
             .unwrap_or_default()
             .first()
             .and_then(|x| x.as_str())
             .ok_or(GameFinderError::InvalidField("gameId"))?;
         let host = body
-            .query(&self.config.host_path)
+            .query(&config.host_path)
             .unwrap_or_default()
             .first()
             .and_then(|x| x.as_str())
             .ok_or(GameFinderError::InvalidField("host"))?;
         let port = body
-            .query(&self.config.port_path)
+            .query(&config.port_path)
             .unwrap_or_default()
             .first()
             .and_then(|x| x.as_u64())

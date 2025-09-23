@@ -13,14 +13,16 @@ use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{debug, error, info};
+use crate::state::AppState;
 
 #[axum::debug_handler]
 pub async fn ws_upgrade(
     ws: WebSocketUpgrade,
-    queue_tracker: State<Arc<Mutex<QueueTracker>>>,
+    app_state: State<AppState>,
     Path(queue): Path<String>,
 ) -> Response {
-    ws.on_upgrade(|x| handle_socket(x, queue_tracker.0, queue))
+    let queue_tracker = app_state.0.queue_tracker;
+    ws.on_upgrade(|x| handle_socket(x, queue_tracker, queue))
 }
 
 pub async fn handle_socket(
