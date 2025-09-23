@@ -1,5 +1,5 @@
 use crate::entry::{Entry, EntryId};
-use crate::gamefinder::Game;
+use crate::gamefinder::{GameFinder};
 use crate::matchmaker;
 use crate::matchmaker::MatchmakerResult;
 use crate::queue::{Queue, QueueResult};
@@ -10,24 +10,27 @@ use std::sync::Arc;
 use tokio::sync::oneshot::{Receiver, Sender};
 use tokio::sync::{Mutex, MutexGuard};
 use tracing::{info, warn};
+use uuid::Uuid;
 
 pub struct QueueTracker {
     pub queues: HashMap<String, Arc<Mutex<Queue>>>,
     pub senders: HashMap<EntryId, Sender<Result<QueueResult, String>>>,
+    pub game_finder: GameFinder,
     pub locked: bool,
 }
 
 impl QueueTracker {
-    pub fn new() -> Self {
+    pub fn new(game_finder: GameFinder) -> Self {
         Self {
             queues: HashMap::new(),
             senders: HashMap::new(),
+            game_finder,
             locked: false,
         }
     }
 
-    pub async fn from_file() -> Arc<Mutex<Self>> {
-        let tracker = Arc::new(Mutex::new(Self::new()));
+    pub async fn from_file(game_finder: GameFinder) -> Arc<Mutex<Self>> {
+        let tracker = Arc::new(Mutex::new(Self::new(game_finder)));
 
         let data = tokio::fs::read_to_string("queues.json").await;
         let Ok(data) = data else {
@@ -245,10 +248,26 @@ impl QueueTracker {
                     })
                     .collect();
 
-                for sender in senders {
-                    let game = Game::demo();
-                    let _ = sender.send(Ok(QueueResult::new(teams_entries.clone(), game)));
+                let players: &Vec<Vec<Uuid>> = &teams_entries.iter().flatten().map(|x| x.players.clone()).collect::<Vec<Vec<Uuid>>>();
+
+
+                match tracker.game_finder.find_game(&queue.id, players).await {
+                    Ok(game) => {
+                        for sender in senders {
+                            let _ = sender.send(Ok(QueueResult::new(teams_entries.clone(), game.clone())));
+                        }
+                    }
+                    Err(err) => {
+                        for sender in senders {
+                            let _ = sender.send(Err(err.to_string()));
+                        }
+                    }
                 }
+
+
+
+
+
             }
             MatchmakerResult::Error(err, affected) => {
                 let players: Vec<EntryId> = if let Some(affected) = affected {
