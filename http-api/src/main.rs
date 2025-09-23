@@ -6,37 +6,37 @@ use axum::Router;
 use axum::routing::{any, get, post};
 use common::queue_tracker::QueueTracker;
 use std::error::Error;
-use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::signal::unix::{signal, SignalKind};
-use tokio::sync::Mutex;
 use tower_http::trace::TraceLayer;
 use tracing::{info};
 use tracing_subscriber::EnvFilter;
-use common::gamefinder::{GameFinder, GameFinderConfig};
+use common::gamefinder::{GameFinder, GameFinderSettings};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     // Print build info at startup
+
     println!(
-        "Build time: {}\nGit commit hash: {}",
+        "Build Information:\n  Build time: {}\n  Git commit hash: {}",
         env!("BUILD_TIME"),
         env!("GIT_HASH")
     );
 
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+            println!("No environment variable for 'RUST_LOG' found, defaulting to INFO");
+            EnvFilter::new("info")
+        }))
         .init();
 
     info!("Loading config...");
 
-
-    let game_finder_config = GameFinderConfig::load_or_create_config("config.toml").await?;
-
-    let game_finder = Arc::new(Mutex::new(GameFinder::new(game_finder_config)));
+    let game_finder_config = GameFinderSettings::load_or_create_config("config.json").await?;
+    let game_finder = GameFinder::new(game_finder_config);
 
     info!("Initializing queue tracker...");
-    let queue_tracker = QueueTracker::from_file().await;
+    let queue_tracker = QueueTracker::from_file(game_finder).await;
     let queue_tracker_clone = queue_tracker.clone();
 
     info!("Loaded all queues...");
@@ -86,7 +86,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal)
-        .await?;
+        .await.map_err(|x| format!("Failed to service http api: {}", x.to_string()))?;
 
     Ok(())
 }

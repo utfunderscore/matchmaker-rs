@@ -14,7 +14,6 @@ common = { path = "../common" }
 futures-util = "0.3.31"
 uuid = { version = "1.17.0", features = ["v4", "serde"] }
 tower-http = { version = "0.6.6", features = ["trace"] }
-console-subscriber = "0.4.1"
 
 [build]
 rustflags = ["--cfg", "tokio_unstable"]
