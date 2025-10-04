@@ -214,13 +214,13 @@ impl QueueTracker {
         tokio::spawn(async move {
 
             loop {
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                 Self::tick_task(tracker.clone(), &queue_id).await;
             }
         });
     }
 
     pub async fn tick_task(tracker: Arc<Mutex<Self>>, queue_id: &str) {
-        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
         let mut tracker = tracker.lock().await;
         let queue = tracker.get_queue(&queue_id).await;
@@ -263,10 +263,6 @@ impl QueueTracker {
                         }
                     }
                 }
-
-
-
-
 
             }
             MatchmakerResult::Error(err, affected) => {

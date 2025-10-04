@@ -1,30 +1,31 @@
 mod data;
-mod game_routes;
 mod queue_routes;
 mod socket;
 mod state;
 
 use crate::state::AppState;
 use axum::Router;
-use axum::routing::{any, get, post, put};
-use common::gamefinder::{GameFinder, GameFinderSettings};
+use axum::routing::{any, get, post};
+use common::gamefinder::GameFinder;
 use common::queue_tracker::QueueTracker;
 use std::error::Error;
-use std::sync::{Arc};
 use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
-use tokio::sync::RwLock;
 use tower_http::trace::TraceLayer;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    // Print build info at startup
+
+    let build_time = chrono::DateTime::parse_from_rfc3339(env!("BUILD_TIME"))
+        .map(|dt| dt.with_timezone(&chrono::Local))
+        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S %z").to_string())
+        .unwrap_or_else(|_| env!("BUILD_TIME").to_string());
 
     println!(
         "Build Information:\n  Build time: {}\n  Git commit hash: {}",
-        env!("BUILD_TIME"),
+        build_time,
         env!("GIT_HASH")
     );
 
@@ -36,20 +37,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .init();
 
     info!("Loading config...");
-
-    let finder_settings = Arc::new(RwLock::new(
-        GameFinderSettings::load_or_create_config("config.json").await?,
-    ));
-    let game_finder = GameFinder::new(finder_settings.clone());
+    let game_finder = GameFinder::new();
 
     info!("Initializing queue tracker...");
     let queue_tracker = QueueTracker::from_file(game_finder).await;
     let queue_tracker_clone = queue_tracker.clone();
 
-    let state = AppState {
-        finder_settings,
-        queue_tracker,
-    };
+    let state = AppState { queue_tracker };
 
     info!("Loaded all queues...");
 
@@ -60,7 +54,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         )
         .route("/api/v1/queue/{name}", get(queue_routes::get_queue))
         .route("/api/v1/queue/{name}/join", any(socket::ws_upgrade))
-        .route("/api/v1/finder", put(game_routes::update_settings))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 

@@ -1,8 +1,8 @@
 use crate::entry::{Entry, EntryId};
-use crate::gamefinder::Game;
 use crate::matchmaker::{Matchmaker, MatchmakerResult};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use serde_json::Value;
 use tracing::warn;
 use uuid::Uuid;
 
@@ -15,11 +15,11 @@ pub struct Queue {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct QueueResult {
     pub teams: Vec<Vec<Entry>>,
-    pub game: Game,
+    pub game: Value,
 }
 
 impl QueueResult {
-    pub fn new(teams: Vec<Vec<Entry>>, game: Game) -> Self {
+    pub fn new(teams: Vec<Vec<Entry>>, game: Value) -> Self {
         Self { teams, game }
     }
 }
