@@ -1,5 +1,8 @@
 FROM debian:bookworm-slim
 
+# Build argument for target architecture
+ARG TARGETARCH
+
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     ca-certificates \
@@ -20,8 +23,9 @@ RUN mkdir -p /app/data && \
 # Declare /app/data as a volume (optional, for documentation and best practices)
 VOLUME ["/app/data"]
 
-# Copy binary and set permissions before changing user
-COPY target/x86_64-unknown-linux-gnu/release/http-api /app/http-api
+# Copy binary based on target architecture
+# Docker automatically sets TARGETARCH to amd64 or arm64
+COPY artifacts/${TARGETARCH}/http-api /app/http-api
 RUN chmod +x /app/http-api && \
     chown appuser:appgroup /app/http-api && \
     chown appuser:appgroup /app && \
