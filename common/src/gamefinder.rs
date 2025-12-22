@@ -75,7 +75,7 @@ impl GameFinder {
         info!("Making game request to {}", url);
 
         let response = CLIENT
-            .get(&url)
+            .post(&url)
             .json(&players)
             .send()
             .await
