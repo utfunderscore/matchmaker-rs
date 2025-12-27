@@ -19,19 +19,19 @@ Designed for flexibility and performance, this project enables efficient player 
 
 ---
 
-## ✨ Features
+## Features
 
-- ⚡ **Real-time matchmaking** via WebSockets
-- 🔄 Flexible queue and match management
-- 🦀 Modular Rust backend
-- 🌐 HTTP API for queue operations
-- 📊 Benchmarking tools for performance analysis
+- **Real-time matchmaking** via WebSockets
+- Flexible queue and match management
+- Modular Rust backend
+- HTTP API for queue operations
+- Benchmarking tools for performance analysis
 
 ---
 
-## 🧩 Matchmakers
+## Matchmakers
 
-### 🏅 Elo
+### Elo
 
 A matchmaker that pairs players based on their proximity in skill level. Uses an expanding range to pair players over time.  
 **Max 2 teams**
@@ -50,7 +50,7 @@ elo:              # Numerical representation of player skill (e.g., Elo rating)
 
 ---
 
-### 🧩 Flexible
+### Flexible
 
 A matchmaker that forms teams of variable sizes to reach a target team size, allowing for flexible group compositions.  
 Supports multiple teams per match and can accommodate entries of different sizes within defined limits.
@@ -80,7 +80,7 @@ _None (entries are grouped by size; no specific player metadata required)._
 
 ---
 
-## 🚀 Prerequisites
+## Prerequisites
 
 - 🦀 Rust (latest stable, recommended via [rustup](https://rustup.rs/))
 - 🐍 [uv](https://docs.astral.sh/uv/) (for Python dependency management)
@@ -88,7 +88,7 @@ _None (entries are grouped by size; no specific player metadata required)._
 
 ---
 
-## 🛠️ Build & Run (Rust Backend)
+## Build & Run (Rust Backend)
 
 1. **Clone the repository:**
    ```sh
@@ -110,7 +110,7 @@ _None (entries are grouped by size; no specific player metadata required)._
 
 ---
 
-## 📈 Benchmarking
+## Benchmarking
 
 1. **Install Python dependencies:**
    ```sh
@@ -125,13 +125,13 @@ _None (entries are grouped by size; no specific player metadata required)._
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome!  
 Please open issues or pull requests for bug fixes, features, or improvements.
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License.
